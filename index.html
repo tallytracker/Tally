@@ -1523,7 +1523,7 @@ function renderProjectCard(p){
   const tl=p.type==='fixed'?`${cur(p)}${p.rate}/session`:p.type==='daily'?`${cur(p)}${p.rate}/day`:p.type==='hourly'?`${cur(p)}${p.rate}/hr`:p.type==='customrate'?`${cur(p)}${p.customRateAmt}/${p.customRateMin}${p.customRateUnit==='hr'?'hr':'min'}`:p.type==='lending'?`Lending · ${(p.participants||[]).length} people`:'';
   const dir='';
   const ht=!!timers[p.id],tb=ht?'<div class="project-timer-badge"><span class="pulse-dot"></span>Timer running</div>':'';
-  const dirLabel=(p.type==='project'||p.type==='group'||p.type==='lending')?'':' · '+payerName(p)+' pays '+receiverName(p);
+  const dirLabel='';
   return`<div class="project-card ${ht?'has-timer':''}" onclick="openProject('${p.id}')"><div class="project-info"><div class="project-name">${dir}${esc(p.name)}</div><div class="project-meta">${typePrefix}${tl}${dirLabel}</div>${tb}</div><span class="project-balance ${cls}">${cur(p)}${displayAmt}</span><span class="project-arrow">›</span></div>`;
 }
 
