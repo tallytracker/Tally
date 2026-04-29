@@ -126,6 +126,8 @@ summary::-webkit-details-marker{display:none}summary::marker{display:none}
 .toggle-switch.on{background:var(--accent)}
 .toggle-knob{width:22px;height:22px;border-radius:11px;background:#fff;position:absolute;top:3px;left:3px;transition:left .2s ease;box-shadow:0 1px 4px rgba(0,0,0,.15)}
 .toggle-switch.on .toggle-knob{left:23px}
+.toggle input:checked~.toggle-bg{background:var(--green-btn)}
+.toggle input:checked~.toggle-knob{left:23px}
 
 .form-submit{width:100%;padding:16px;border-radius:12px;border:none;background:var(--text);color:#fff;font-weight:700;font-size:15px;margin-top:8px;transition:transform .15s ease}
 .form-submit:active{transform:scale(.97)}
@@ -657,6 +659,19 @@ summary::-webkit-details-marker{display:none}summary::marker{display:none}
     <p class="form-hint">Used at the top of PDF exports and invoices. Leave blank to use your first name.</p>
   </div>
   <button class="form-submit" onclick="saveSettings()">Save Settings</button>
+  <div style="margin-top:32px;padding-top:24px;border-top:1.5px solid var(--border)">
+    <div class="form-label" style="margin-bottom:4px">Session Reminders</div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.5">Get a notification at the end of the day to log any unrecorded sessions.</p>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <span style="font-size:14px;font-weight:600">Enable reminders</span>
+      <label class="toggle" style="position:relative;width:48px;height:28px;display:inline-block"><input type="checkbox" id="sReminders" onchange="toggleReminders(this.checked)" style="display:none"><span class="toggle-bg" style="position:absolute;inset:0;background:var(--border);border-radius:14px;transition:background .2s;cursor:pointer"></span><span class="toggle-knob" style="position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:11px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.15);transition:left .2s"></span></label>
+    </div>
+    <div id="reminderTimeRow" style="display:none;margin-bottom:8px">
+      <label style="font-size:13px;color:var(--text-mid);margin-right:8px">Remind me at</label>
+      <input type="time" id="sReminderTime" value="20:00" class="form-input" style="width:auto;display:inline-block" onchange="saveReminderTime()">
+    </div>
+    <p id="reminderStatus" style="font-size:12px;color:var(--text-muted);margin-top:6px"></p>
+  </div>
   <div style="margin-top:32px;padding-top:24px;border-top:1.5px solid var(--border)">
     <div class="form-label" style="margin-bottom:12px">Send Feedback</div>
     <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.5">Found a bug? Have an idea? I'd love to hear it — your feedback shapes what gets built next.</p>
@@ -1682,6 +1697,14 @@ function saveProjectForm(){
 function openSettings(){
   document.getElementById('sName').value=settings.name||'';
   document.getElementById('sExportName').value=settings.exportName||'';
+  // Init reminder toggle state
+  const toggle=document.getElementById('sReminders');
+  if(toggle)toggle.checked=!!settings.remindersEnabled;
+  const timeRow=document.getElementById('reminderTimeRow');
+  if(timeRow)timeRow.style.display=settings.remindersEnabled?'flex':'none';
+  const timeInput=document.getElementById('sReminderTime');
+  if(timeInput)timeInput.value=settings.reminderTime||'20:00';
+  updateReminderStatus();
   renderArchivedList();
   renderAuthCard();
   stopTick();showView('settingsView');
@@ -1697,6 +1720,137 @@ function saveSettings(){
   delete settings.invoiceInfo;
   db.saveSettings();
   showToast('Settings saved');goBack();
+}
+
+// ===== SESSION REMINDERS =====
+// Local notifications that fire at a user-chosen time (default 8pm) on days
+// where activities are scheduled but no session has been logged yet.
+// Fully client-side — no server or FCM needed.
+let reminderTimeout=null;
+
+function toggleReminders(enabled){
+  if(enabled){
+    // Request notification permission
+    if(!('Notification' in window)){
+      showToast('Notifications not supported on this browser');
+      document.getElementById('sReminders').checked=false;
+      return;
+    }
+    Notification.requestPermission().then(perm=>{
+      if(perm==='granted'){
+        settings.remindersEnabled=true;
+        settings.reminderTime=settings.reminderTime||'20:00';
+        db.saveSettings();
+        document.getElementById('reminderTimeRow').style.display='flex';
+        document.getElementById('sReminderTime').value=settings.reminderTime;
+        scheduleReminder();
+        updateReminderStatus();
+      }else{
+        showToast('Please allow notifications to enable reminders');
+        document.getElementById('sReminders').checked=false;
+        settings.remindersEnabled=false;
+        db.saveSettings();
+      }
+    });
+  }else{
+    settings.remindersEnabled=false;
+    db.saveSettings();
+    document.getElementById('reminderTimeRow').style.display='none';
+    if(reminderTimeout){clearTimeout(reminderTimeout);reminderTimeout=null}
+    updateReminderStatus();
+  }
+}
+
+function saveReminderTime(){
+  settings.reminderTime=document.getElementById('sReminderTime').value||'20:00';
+  db.saveSettings();
+  scheduleReminder();
+  updateReminderStatus();
+  showToast('Reminder time updated');
+}
+
+function updateReminderStatus(){
+  const el=document.getElementById('reminderStatus');
+  if(!el)return;
+  if(settings.remindersEnabled){
+    el.textContent='Reminders active — you\'ll be notified at '+formatTime12(settings.reminderTime)+' on days with scheduled sessions.';
+    el.style.color='var(--green)';
+  }else{
+    el.textContent='';
+  }
+}
+
+function formatTime12(t){
+  if(!t)return'8:00 PM';
+  const[h,m]=t.split(':').map(Number);
+  const ampm=h>=12?'PM':'AM';
+  const h12=h%12||12;
+  return h12+':'+(m<10?'0':'')+m+' '+ampm;
+}
+
+// Schedule the next reminder check. Uses setTimeout to fire at the chosen
+// time today (or tomorrow if the time has already passed).
+function scheduleReminder(){
+  if(reminderTimeout){clearTimeout(reminderTimeout);reminderTimeout=null}
+  if(!settings.remindersEnabled)return;
+  const time=settings.reminderTime||'20:00';
+  const[h,m]=time.split(':').map(Number);
+  const now=new Date();
+  const target=new Date(now);
+  target.setHours(h,m,0,0);
+  // If the target time already passed today, schedule for tomorrow
+  if(target<=now)target.setDate(target.getDate()+1);
+  const ms=target-now;
+  reminderTimeout=setTimeout(()=>{
+    fireSessionReminder();
+    // Schedule next day's reminder
+    scheduleReminder();
+  },ms);
+}
+
+// Check which activities are scheduled for today but haven't been logged,
+// and send a notification for each (or a grouped one).
+function fireSessionReminder(){
+  if(!settings.remindersEnabled)return;
+  if(!('Notification' in window)||Notification.permission!=='granted')return;
+  const today=new Date(),dow=today.getDay(),todayStr=today.toISOString().split('T')[0];
+  const pending=projects.filter(p=>{
+    if(p.type==='project'||p.type==='lending')return false; // only activities
+    if(p.archived)return false;
+    if(!p.days||!p.days.includes(dow))return false;
+    // Check if a session was already logged today
+    return!(p.history||[]).some(h=>h.date.split('T')[0]===todayStr&&(h.type==='charge'||h.type==='skipped'));
+  });
+  if(!pending.length)return;
+  if(pending.length===1){
+    const p=pending[0];
+    new Notification('Tally — Session Reminder',{
+      body:'Did you have your '+p.name+' session today? Tap to log it.',
+      icon:'icon-192.png',
+      tag:'tally-reminder-'+todayStr,
+      renotify:true
+    });
+  }else{
+    const names=pending.map(p=>p.name).join(', ');
+    new Notification('Tally — Session Reminders',{
+      body:'You have '+pending.length+' unlogged sessions today: '+names+'. Tap to log them.',
+      icon:'icon-192.png',
+      tag:'tally-reminder-'+todayStr,
+      renotify:true
+    });
+  }
+}
+
+// Initialize reminders on app start
+function initReminders(){
+  const toggle=document.getElementById('sReminders');
+  if(toggle)toggle.checked=!!settings.remindersEnabled;
+  const timeRow=document.getElementById('reminderTimeRow');
+  if(timeRow)timeRow.style.display=settings.remindersEnabled?'flex':'none';
+  const timeInput=document.getElementById('sReminderTime');
+  if(timeInput&&settings.reminderTime)timeInput.value=settings.reminderTime;
+  if(settings.remindersEnabled)scheduleReminder();
+  updateReminderStatus();
 }
 
 // ===== FEEDBACK =====
@@ -3645,8 +3799,8 @@ function startApp(){
   }
   renderAuthCard();
   updateSyncBadge();
+  initReminders();
 }
-// App is started by auth.onAuthStateChanged — not called directly here
 </script>
 <script>
 if('serviceWorker' in navigator){
