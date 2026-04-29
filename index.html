@@ -280,6 +280,7 @@ summary::-webkit-details-marker{display:none}summary::marker{display:none}
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
 
@@ -1304,6 +1305,11 @@ function isPay(p){return p.direction!=='earn'}
 //
 //   pay activity  (I pay them):    payer = me,    receiver = them
 //   earn activity (they pay me):   payer = them,  receiver = me
+//
+// payerLabel / receiverLabel are VIEWER-AWARE versions for action buttons:
+//   Returns "I" when the current viewer IS that role, else the actual name.
+//   Used for buttons ("I Paid" vs "Rita Paid") — NOT for the balance card
+//   or share summaries (which always use full names via payerName/receiverName).
 function myName(){return settings.name||'You'}
 function otherName(p){
   if(!p)return'Other';
@@ -1312,6 +1318,12 @@ function otherName(p){
 }
 function payerName(p){return isPay(p)?myName():otherName(p)}
 function receiverName(p){return isPay(p)?otherName(p):myName()}
+// Viewer-aware labels for buttons and action text.
+// Returns "I" when the current viewer IS the payer/receiver,
+// otherwise returns the actual name. Used for buttons like "I Paid"
+// vs "Rita Paid" — NOT for the balance card (which always uses full names).
+function payerLabel(p){return isPay(p)?'I':otherName(p)}
+function receiverLabel(p){return isPay(p)?otherName(p):'I'}
 function balLabel(p){
   const bal=p.balance||0;
   if(p.type==='project'){return bal===0?'No expenses':'Total Spent'}
@@ -2029,7 +2041,7 @@ function renderDetail(){
   const tl=p.type==='fixed'?`${cur(p)}${p.rate} / session`:p.type==='daily'?`${cur(p)}${p.rate} / day`:p.type==='hourly'?`${cur(p)}${p.rate} / hour`:p.type==='customrate'?`${cur(p)}${p.customRateAmt} / ${p.customRateMin}${p.customRateUnit==='hr'?'hr':'min'}`:p.type==='lending'?`${(p.participants||[]).length} people`:'Project';
   const ds=p.days&&p.days.length?' · '+p.days.map(d=>DAY_NAMES[d]).join(', '):'';
   const gName=p.groupId&&getGroup(p.groupId)?getGroup(p.groupId).name+' · ':'';
-  const dirBadge=p.type==='project'?'':pay?'<span class="detail-dir-badge badge-pay">'+esc(myName())+' PAYS</span>':'<span class="detail-dir-badge badge-earn">'+esc(myName())+' EARNS</span>';
+  const dirBadge=p.type==='project'?'':pay?'<span class="detail-dir-badge badge-pay">I PAY</span>':'<span class="detail-dir-badge badge-earn">I EARN</span>';
   document.getElementById('detailType').innerHTML=gName+tl+ds+' '+dirBadge;
 
   syncBalance(p);
@@ -2052,8 +2064,8 @@ function renderDetail(){
   document.getElementById('dBalUnits').textContent=unitsText;
 
   document.getElementById('dAddLabel').textContent=p.type==='project'?'Add Expense':'Add Session';
-  // Payment button label = name of the PAYER, derived from payerName().
-  document.getElementById('dPayLabel').textContent=payerName(p)+' Paid';
+  // Payment button label: "I Paid" if current viewer is the payer, else "Name Paid"
+  document.getElementById('dPayLabel').textContent=payerLabel(p)+' Paid';
   document.getElementById('chargeInput').innerHTML='';
   document.getElementById('payInput').innerHTML='';
 
@@ -2362,7 +2374,7 @@ function showPayInput(){
   chargeOpen=false;document.getElementById('chargeInput').innerHTML='';
   payOpen=!payOpen;
   if(!payOpen){document.getElementById('payInput').innerHTML='';return}
-  const label=isPay(p)?'Amount '+myName()+' paid…':'Amount '+myName()+' received…';
+  const label=isPay(p)?'Amount I paid…':'Amount I received…';
   document.getElementById('payInput').innerHTML=`<div class="input-row"><input class="input-field" type="number" inputmode="decimal" placeholder="${label}" id="payVal" autofocus><button class="input-confirm" onclick="confirmPay()">Confirm</button></div>`;
   document.getElementById('payVal').focus();
 }
@@ -2473,7 +2485,7 @@ function renderProjectDetail(){
     const transfers=calcTransfers(balances);
     const allSettled=transfers.length===0;
 
-    settlementHtml+='<div style="margin-bottom:16px">';
+    settlementHtml+='<div id="projSettleUpSection" style="margin-bottom:16px">';
     if(allSettled){
       settlementHtml+='<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px 18px;text-align:center;box-shadow:var(--shadow-sm)"><span style="font-size:15px;font-weight:600;color:var(--text-light)">✅ All settled up!</span></div>';
     }else{
@@ -2541,12 +2553,12 @@ function renderProjectDetail(){
     actionsHtml+='<div style="margin-top:8px"><button class="detail-btn btn-add-payment" style="width:100%" onclick="showProjectSettleConfirm()"><span class="btn-icon">✓</span> Settle & Reset</button></div>';
   }else if(pay){
     actionsHtml+='<div class="detail-actions" style="margin-top:16px">';
-    actionsHtml+='<button class="detail-btn btn-add-payment" style="width:100%" onclick="showProjectPayInput()"><span class="btn-icon">$</span> '+esc(payerName(p))+' Paid '+esc(receiverName(p))+'</button>';
+    actionsHtml+='<button class="detail-btn btn-add-payment" style="width:100%" onclick="showProjectPayInput()"><span class="btn-icon">$</span> '+esc(payerLabel(p))+' Paid '+esc(receiverLabel(p))+'</button>';
     actionsHtml+='</div>';
   }else{
     actionsHtml+='<div class="detail-actions" style="margin-top:16px">';
     actionsHtml+='<button class="detail-btn btn-add-session" onclick="showProjectExpenseInput()"><span class="btn-icon">＋</span> Add Expense</button>';
-    actionsHtml+='<button class="detail-btn btn-add-payment" onclick="showProjectPayInput()"><span class="btn-icon">$</span> '+esc(payerName(p))+' Paid</button>';
+    actionsHtml+='<button class="detail-btn btn-add-payment" onclick="showProjectPayInput()"><span class="btn-icon">$</span> '+esc(payerLabel(p))+' Paid</button>';
     actionsHtml+='</div>';
   }
   document.getElementById('projActions').innerHTML=actionsHtml;
@@ -2772,7 +2784,7 @@ function showProjectPayInput(){
     <div class="input-row"><input class="input-field" type="number" inputmode="decimal" placeholder="Amount…" id="projPayAmt" autofocus></div>
     ${catPicker}
     <div class="input-row"><input class="input-field" type="text" placeholder="Description (optional)" id="projPayNote" style="font-size:14px"></div>
-    <button class="input-confirm" style="width:100%;padding:14px" onclick="confirmProjectPay()">${esc(payerName(p))} Paid</button>
+    <button class="input-confirm" style="width:100%;padding:14px" onclick="confirmProjectPay()">${esc(payerLabel(p))} Paid</button>
   </div>`;
   document.getElementById('projPayAmt').focus();
 }
@@ -2940,19 +2952,64 @@ function doProjectSettle(){
   db.saveProject(p);closeOverlay();renderProjectDetail();showToast('Settled! History preserved');
 }
 
+// ===== SHARE WITH CARD IMAGE =====
+// Clones the given element(s) offscreen, captures with html2canvas, and
+// shares as image + text via the Web Share API. Falls back to text-only
+// WhatsApp share if anything fails (no html2canvas, no Web Share API,
+// canvas error, user cancels, etc).
+// cardEls can be a single element or an array of elements to capture together.
+// Optional title is shown above the card(s) in the captured image.
+async function shareCardImage(cardEls, shareText, fallbackText, title){
+  try{
+    if(typeof html2canvas==='undefined'||!navigator.canShare) throw new Error('unsupported');
+    const els=Array.isArray(cardEls)?cardEls:[cardEls];
+    // Use width of the first element for the container
+    const rect=els[0].getBoundingClientRect();
+    const container=document.createElement('div');
+    container.style.cssText='position:fixed;left:-9999px;top:0;width:'+rect.width+'px;z-index:-1;pointer-events:none;padding:16px';
+    container.style.background='var(--bg)';
+    // Add activity/project name above the card
+    if(title){
+      const header=document.createElement('div');
+      header.style.cssText='font-family:Sora,sans-serif;font-size:20px;font-weight:700;color:#2c2418;text-align:center;margin-bottom:12px';
+      header.textContent=title;
+      container.appendChild(header);
+    }
+    // Clone all elements into the container
+    els.forEach(el=>{if(el)container.appendChild(el.cloneNode(true))});
+    // Add Tally branding below
+    const branding=document.createElement('div');
+    branding.style.cssText='display:flex;align-items:center;gap:8px;justify-content:center;padding:14px 0 4px;opacity:0.6';
+    branding.innerHTML='<svg width="20" height="20" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="#e67e22"/><g transform="translate(7.5,8)"><rect x="0" y="0" width="28" height="7" rx="1.5" fill="#fff"/><rect x="10" y="0" width="8" height="32" rx="1.5" fill="#fff"/><rect x="20" y="10" width="13" height="6" rx="1.3" fill="#fff" opacity=".95"/><rect x="20" y="18" width="10" height="6" rx="1.3" fill="#fff" opacity=".7"/><rect x="20" y="26" width="7" height="6" rx="1.3" fill="#fff" opacity=".45"/></g></svg><span style="font-family:Sora,sans-serif;font-size:13px;font-weight:700;color:#9e9486">Tally</span>';
+    container.appendChild(branding);
+    document.body.appendChild(container);
+    // Capture
+    const canvas=await html2canvas(container,{backgroundColor:getComputedStyle(document.body).getPropertyValue('--bg').trim()||'#f7f5f2',scale:2,logging:false,useCORS:true});
+    document.body.removeChild(container);
+    // Convert to blob
+    const blob=await new Promise((res,rej)=>{canvas.toBlob(b=>b?res(b):rej('blob failed'),'image/png')});
+    const file=new File([blob],'tally-balance.png',{type:'image/png'});
+    // Check if sharing files is supported
+    if(!navigator.canShare({files:[file]})) throw new Error('no file share');
+    await navigator.share({text:shareText,files:[file]});
+  }catch(e){
+    // Fallback: text-only WhatsApp share
+    if(e&&e.name==='AbortError')return; // user cancelled share sheet — do nothing
+    window.open('https://wa.me/?text='+encodeURIComponent(fallbackText),'_blank');
+  }
+}
+
 function showShareSummary(){
   const p=getProject(currentProjectId);if(!p)return;
   const c=cur(p);
   const isGroup=p.participants&&p.participants.length>0;
   const currentHist=getEntriesSinceLastSettlement(p);
-  let text='📲 *Tally* — '+p.name+'\n';
-  if(p.budget)text+='Budget: '+c+p.budget+'\n';
   const totalExp=rd2(currentHist.filter(h=>h.type==='charge').reduce((s,h)=>s+h.amount,0));
   const totalPaid=rd2(currentHist.filter(h=>h.type==='payment'&&!h.from).reduce((s,h)=>s+h.amount,0));
+
+  let status='';
   if(isGroup){
-    // Group projects: multiple people pay, "Total Expenses" stays meaningful
-    text+='Total Expenses: '+c+totalExp+'\n';
-    if(totalPaid)text+='Total Paid: '+c+totalPaid+'\n';
+    status='Total Expenses: '+c+totalExp;
     const parts=p.participants;
     const paidMap={};const owesMap={};
     parts.forEach(n=>{paidMap[n]=0;owesMap[n]=0});
@@ -2964,22 +3021,39 @@ function showShareSummary(){
     currentHist.filter(h=>h.type==='payment'&&h.from&&h.to).forEach(h=>{if(paidMap[h.from]!==undefined)paidMap[h.from]+=h.amount;if(paidMap[h.to]!==undefined)paidMap[h.to]-=h.amount});
     const bals={};parts.forEach(n=>{bals[n]=rd2(paidMap[n]-owesMap[n])});
     const transfers=calcTransfers(bals);
-    text+='\n👥 Settle Up:\n';
-    if(transfers.length===0)text+='✅ All settled!\n';
-    else transfers.forEach(t=>{text+='💸 '+t.from+' → '+t.to+': '+c+rd2(t.amount)+'\n'});
+    if(transfers.length===0){
+      status+='\nAll settled!';
+    }else{
+      status+='\n\nSettle Up:\n';
+      transfers.forEach(t=>{status+=t.from+' → '+t.to+': '+c+rd2(t.amount)+'\n'});
+    }
   }else{
-    // Solo project: user is the one paying, so "Paid" + "Remaining" reads naturally
-    text+='Paid: '+c+totalExp+'\n';
+    status='Paid: '+c+totalExp;
     if(p.budget){
       const remaining=rd2(p.budget-totalExp);
-      if(remaining>0)text+='Remaining Balance to Pay: '+c+remaining+'\n';
-      else if(remaining<0)text+='Over Budget by: '+c+rd2(Math.abs(remaining))+'\n';
-      else text+='✅ Budget fully used\n';
+      if(remaining>0)status+='\nRemaining: '+c+remaining;
+      else if(remaining<0)status+='\nOver Budget by: '+c+rd2(Math.abs(remaining));
+      else status+='\nBudget fully used';
     }
   }
-  text+='\n_Tracked with Tally_ 📲\n_The simple balance tracker — try it free!_';
-  const encoded=encodeURIComponent(text);
-  window.open('https://wa.me/?text='+encoded,'_blank');
+
+  // Text that accompanies the image
+  const shareText='Hi there, I\'m using the Tally app to track our balance. Here\'s our current status for '+p.name+'.\n\nTally — the simple balance tracker. Try it for free!';
+  // Fallback text-only (full details)
+  let fallbackText='🟧 *Tally*\n\n';
+  fallbackText+='Hi there, I\'m using the app Tally to track our balance. Below is our current balance status:\n\n';
+  fallbackText+='*'+p.name+'*\n';
+  fallbackText+='👉 '+status+'\n\n';
+  fallbackText+='_Tracked with Tally_\n';
+  fallbackText+='_The simple balance tracker — try it free!_';
+
+  // Try image share, fall back to text
+  // For group projects, capture both the budget card and the settle-up section
+  const budgetEl=document.getElementById('projBudgetSummary');
+  const settleEl=document.getElementById('projSettleUpSection');
+  const captureEls=settleEl?[budgetEl,settleEl]:[budgetEl];
+  if(budgetEl)shareCardImage(captureEls,shareText,fallbackText,p.name);
+  else window.open('https://wa.me/?text='+encodeURIComponent(fallbackText),'_blank');
 }
 
 function doDeleteProjectEntry(entryId){
@@ -3328,31 +3402,56 @@ function showLendingShareSummary(){
   const c=cur(p);
   const{balances,parts,totalMoved}=calcLendingSettlement(p);
   const transfers=calcTransfers(balances);
-  let text='📊 *Tally* — '+p.name+'\nTotal Transactions: '+c+totalMoved+'\n\n👥 Settle Up:\n';
-  if(transfers.length===0)text+='✅ All settled!\n';
-  else transfers.forEach(t=>{text+='💸 '+t.from+' → '+t.to+': '+c+rd2(t.amount)+'\n'});
-  text+='\n_Tracked with Tally_ 📊\n_The simple balance tracker — try it free!_';
-  window.open('https://wa.me/?text='+encodeURIComponent(text),'_blank');
+
+  let status='Total Transactions: '+c+totalMoved;
+  if(transfers.length===0){
+    status+='\nAll settled!';
+  }else{
+    status+='\n\nSettle Up:\n';
+    transfers.forEach(t=>{status+=t.from+' → '+t.to+': '+c+rd2(t.amount)+'\n'});
+  }
+
+  // Text that accompanies the image
+  const shareText='Hi there, I\'m using the Tally app to track our balance. Here\'s our current status for '+p.name+'.\n\nTally — the simple balance tracker. Try it for free!';
+  // Fallback text-only
+  let fallbackText='🟧 *Tally*\n\n';
+  fallbackText+='Hi there, I\'m using the app Tally to track our balance. Below is our current balance status:\n\n';
+  fallbackText+='*'+p.name+'*\n';
+  fallbackText+='👉 '+status+'\n\n';
+  fallbackText+='_Tracked with Tally_\n';
+  fallbackText+='_The simple balance tracker — try it free!_';
+
+  // Capture the entire lending summary (balance card + settle-up)
+  const cardEl=document.getElementById('lendingSummary');
+  if(cardEl)shareCardImage(cardEl,shareText,fallbackText,p.name);
+  else window.open('https://wa.me/?text='+encodeURIComponent(fallbackText),'_blank');
 }
 
 function showActivityShareSummary(){
   const p=getProject(currentProjectId);if(!p)return;
   const c=cur(p);
-  const pay=isPay(p);
   const bal=p.balance||0;
   const abs=rd2(Math.abs(bal));
-  let text='Hi there, I\'m using the app Tally to track our balance. Below is the balance status:\n\n';
-  text+='📲 *Tally* — '+p.name+'\n';
   const payer=payerName(p),receiver=receiverName(p);
-  if(bal===0)text+='\n✅ All settled!\n';
-  else if(bal>0){
-    // Outstanding balance: payer still owes the receiver.
-    text+='\n💰 '+payer+' to pay '+receiver+': '+c+abs+'\n';
-  }else{
-    text+='\n💰 '+payer+' paid '+c+abs+' in advance\n';
-  }
-  text+='\n_Tracked with Tally_ 📲\n_The simple balance tracker — try it free!_';
-  window.open('https://wa.me/?text='+encodeURIComponent(text),'_blank');
+  let status='';
+  if(bal===0)status='All settled!';
+  else if(bal>0)status=payer+' to pay '+receiver+': '+c+abs;
+  else status=payer+' paid '+c+abs+' in advance';
+
+  // Text that accompanies the image
+  const shareText='Hi there, I\'m using the Tally app to track our balance. Here\'s our current status for '+p.name+'.\n\nTally — the simple balance tracker. Try it for free!';
+  // Fallback text-only (full details)
+  let fallbackText='🟧 *Tally*\n\n';
+  fallbackText+='Hi there, I\'m using the app Tally to track our balance. Below is our current balance status:\n\n';
+  fallbackText+='*'+p.name+'*\n';
+  fallbackText+='👉 '+status+'\n\n';
+  fallbackText+='_Tracked with Tally_\n';
+  fallbackText+='_The simple balance tracker — try it free!_';
+
+  // The balance card is inside detailView
+  const cardEl=document.querySelector('#detailView .balance-card');
+  if(cardEl)shareCardImage(cardEl,shareText,fallbackText,p.name);
+  else window.open('https://wa.me/?text='+encodeURIComponent(fallbackText),'_blank');
 }
 
 // ===== EXPORT =====
