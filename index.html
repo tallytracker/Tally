@@ -2045,7 +2045,7 @@ function renderDetail(){
   document.getElementById('detailType').innerHTML=gName+tl+ds+' '+dirBadge;
 
   syncBalance(p);
-  const bal=p.balance||0,abs=rd2(Math.abs(bal));
+  const bal=p.balance||0,abs=Math.round(Math.abs(bal));
   const lbl=document.getElementById('dBalLabel'),amt=document.getElementById('dBalAmt');
   lbl.textContent=balLabel(p);
   amt.textContent=cur(p)+abs;
@@ -2429,27 +2429,27 @@ function renderProjectDetail(){
     const barColor=overBudget?'var(--red)':'var(--green)';
     html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Budget</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${budget}</span></div>`;
     html+=`<div style="display:flex;justify-content:space-between;margin-bottom:6px">`;
-    html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--text)">${c}${spent}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Spent</div></div>`;
-    html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:${overBudget?'var(--red)':'var(--accent)'}">${c}${rd2(Math.abs(remaining))}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">${overBudget?'Over Budget':'Remaining'}</div></div>`;
+    html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--text)">${c}${Math.round(spent)}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Spent</div></div>`;
+    html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:${overBudget?'var(--red)':'var(--accent)'}">${c}${Math.round(Math.abs(remaining))}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">${overBudget?'Over Budget':'Remaining'}</div></div>`;
     if(!pay&&!isGroup&&totalIn>0){
-      html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--green)">${c}${totalIn}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Received</div></div>`;
+      html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--green)">${c}${Math.round(totalIn)}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Received</div></div>`;
     }
     html+=`</div>`;
     html+=`<div style="background:var(--border);border-radius:6px;height:8px;margin-bottom:4px;overflow:hidden"><div style="background:${barColor};height:100%;width:${pct}%;border-radius:6px;transition:width .4s ease"></div></div>`;
     html+=`<div style="text-align:right;margin-bottom:14px"><span style="font-size:12px;font-weight:700;color:${overBudget?'var(--red)':'var(--text-muted)'}">${pct}%</span></div>`;
   }else{
     if(pay&&!isGroup){
-      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Total Spent</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${totalOut}</span></div>`;
+      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Total Spent</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${Math.round(totalOut)}</span></div>`;
     }else if(!pay&&!isGroup){
-      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Total Expenses</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${totalOut}</span></div>`;
+      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Total Expenses</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${Math.round(totalOut)}</span></div>`;
       if(totalIn>0){
         html+=`<div style="display:flex;justify-content:space-between;margin-bottom:16px">`;
-        html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--green)">${c}${totalIn}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Received</div></div>`;
-        html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:${totalOut-totalIn>0?'var(--red)':'var(--green)'}">${c}${rd2(Math.abs(totalOut-totalIn))}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">${totalOut-totalIn>0?'Outstanding':'Profit'}</div></div>`;
+        html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--green)">${c}${Math.round(totalIn)}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Received</div></div>`;
+        html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:${totalOut-totalIn>0?'var(--red)':'var(--green)'}">${c}${Math.round(Math.abs(totalOut-totalIn))}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">${totalOut-totalIn>0?'Outstanding':'Profit'}</div></div>`;
         html+=`</div>`;
       }
     }else{
-      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Total Expenses</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${totalOut}</span><span style="font-size:12px;color:var(--text-muted);margin-top:6px">${p.participants.length} people</span></div>`;
+      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Total Expenses</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${Math.round(totalOut)}</span><span style="font-size:12px;color:var(--text-muted);margin-top:6px">${p.participants.length} people</span></div>`;
     }
   }
   html+=`<div style="text-align:center;margin-bottom:14px"><button onclick="showEditBudget()" style="background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer">${budget?'Edit Budget':'Set Budget'}</button></div>`;
@@ -2976,11 +2976,17 @@ async function shareCardImage(cardEls, shareText, fallbackText, title){
       container.appendChild(header);
     }
     // Clone all elements into the container
-    els.forEach(el=>{if(el)container.appendChild(el.cloneNode(true))});
+    els.forEach(el=>{
+      if(!el)return;
+      const clone=el.cloneNode(true);
+      // Strip per-person breakdown (collapsed details) — keep only settle-up cards
+      clone.querySelectorAll('details').forEach(d=>d.remove());
+      container.appendChild(clone);
+    });
     // Add Tally branding below
     const branding=document.createElement('div');
-    branding.style.cssText='display:flex;align-items:center;gap:8px;justify-content:center;padding:14px 0 4px;opacity:0.6';
-    branding.innerHTML='<svg width="20" height="20" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="#e67e22"/><g transform="translate(7.5,8)"><rect x="0" y="0" width="28" height="7" rx="1.5" fill="#fff"/><rect x="10" y="0" width="8" height="32" rx="1.5" fill="#fff"/><rect x="20" y="10" width="13" height="6" rx="1.3" fill="#fff" opacity=".95"/><rect x="20" y="18" width="10" height="6" rx="1.3" fill="#fff" opacity=".7"/><rect x="20" y="26" width="7" height="6" rx="1.3" fill="#fff" opacity=".45"/></g></svg><span style="font-family:Sora,sans-serif;font-size:13px;font-weight:700;color:#9e9486">Tally</span>';
+    branding.style.cssText='display:flex;align-items:center;gap:10px;justify-content:center;padding:18px 0 6px';
+    branding.innerHTML='<svg width="28" height="28" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="#e67e22"/><g transform="translate(7.5,8)"><rect x="0" y="0" width="28" height="7" rx="1.5" fill="#fff"/><rect x="10" y="0" width="8" height="32" rx="1.5" fill="#fff"/><rect x="20" y="10" width="13" height="6" rx="1.3" fill="#fff" opacity=".95"/><rect x="20" y="18" width="10" height="6" rx="1.3" fill="#fff" opacity=".7"/><rect x="20" y="26" width="7" height="6" rx="1.3" fill="#fff" opacity=".45"/></g></svg><span style="font-family:Sora,sans-serif;font-size:16px;font-weight:700;color:#2c2418">Tally</span>';
     container.appendChild(branding);
     document.body.appendChild(container);
     // Capture
@@ -3038,7 +3044,7 @@ function showShareSummary(){
   }
 
   // Text that accompanies the image
-  const shareText='Hi there, I\'m using the Tally app to track our balance. Here\'s our current status for '+p.name+'.\n\nTally — the simple balance tracker. Try it for free!';
+  const shareText='Hi there, I\'m using the Tally app to track our balance. Here\'s our current status for '+p.name+'.\n\n🟧 Tally — the simple balance tracker. Try it for free!';
   // Fallback text-only (full details)
   let fallbackText='🟧 *Tally*\n\n';
   fallbackText+='Hi there, I\'m using the app Tally to track our balance. Below is our current balance status:\n\n';
@@ -3213,7 +3219,7 @@ function renderLendingDetail(){
   const c=cur(p);
   const{balances,parts,totalMoved}=calcLendingSettlement(p);
 
-  let html=`<div class="balance-card" style="margin-top:0;margin-bottom:16px"><span class="balance-label">Total Transactions</span><span class="balance-amount" style="color:var(--text)">${c}${totalMoved}</span><span style="font-size:12px;color:var(--text-muted);margin-top:6px">${parts.length} people</span></div>`;
+  let html=`<div class="balance-card" style="margin-top:0;margin-bottom:16px"><span class="balance-label">Total Transactions</span><span class="balance-amount" style="color:var(--text)">${c}${Math.round(totalMoved)}</span><span style="font-size:12px;color:var(--text-muted);margin-top:6px">${parts.length} people</span></div>`;
 
   const shouldPay=parts.filter(n=>balances[n]<-0.01).sort((a,b)=>balances[a]-balances[b]);
   const shouldReceive=parts.filter(n=>balances[n]>0.01).sort((a,b)=>balances[b]-balances[a]);
@@ -3412,7 +3418,7 @@ function showLendingShareSummary(){
   }
 
   // Text that accompanies the image
-  const shareText='Hi there, I\'m using the Tally app to track our balance. Here\'s our current status for '+p.name+'.\n\nTally — the simple balance tracker. Try it for free!';
+  const shareText='Hi there, I\'m using the Tally app to track our balance. Here\'s our current status for '+p.name+'.\n\n🟧 Tally — the simple balance tracker. Try it for free!';
   // Fallback text-only
   let fallbackText='🟧 *Tally*\n\n';
   fallbackText+='Hi there, I\'m using the app Tally to track our balance. Below is our current balance status:\n\n';
@@ -3439,7 +3445,7 @@ function showActivityShareSummary(){
   else status=payer+' paid '+c+abs+' in advance';
 
   // Text that accompanies the image
-  const shareText='Hi there, I\'m using the Tally app to track our balance. Here\'s our current status for '+p.name+'.\n\nTally — the simple balance tracker. Try it for free!';
+  const shareText='Hi there, I\'m using the Tally app to track our balance. Here\'s our current status for '+p.name+'.\n\n🟧 Tally — the simple balance tracker. Try it for free!';
   // Fallback text-only (full details)
   let fallbackText='🟧 *Tally*\n\n';
   fallbackText+='Hi there, I\'m using the app Tally to track our balance. Below is our current balance status:\n\n';
