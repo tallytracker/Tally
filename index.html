@@ -2209,15 +2209,16 @@ function renderDetail(){
   amt.textContent=cur(p)+abs;
   amt.className='balance-amount '+balColorClass(p);
 
-  // Calculate total units (sessions, hours, days)
-  const currentCharges=getEntriesSinceLastSettlement(p).filter(h=>h.type==='charge');
-  const totalCharged=rd2(currentCharges.reduce((s,h)=>s+h.amount,0));
+  // Units text: shows how many sessions/hours/days the BALANCE represents
+  // with a label: "Unpaid: 5 sessions" or "Paid in Advance: 2 sessions"
   let unitsText='';
-  if(currentCharges.length>0&&totalCharged>0){
-    if(p.type==='fixed'&&p.rate>0){const n=rd2(totalCharged/p.rate);unitsText=n+' session'+(n!==1?'s':'')}
-    else if(p.type==='daily'&&p.rate>0){const n=rd2(totalCharged/p.rate);unitsText=n+' day'+(n!==1?'s':'')}
-    else if(p.type==='hourly'&&p.rate>0){const n=rd2(totalCharged/p.rate);unitsText=n+' hour'+(n!==1?'s':'')}
-    else if(p.type==='customrate'&&p.customRateAmt>0){const n=rd2(totalCharged/p.customRateAmt*p.customRateMin);const u=p.customRateUnit==='hr'?'hour':'min';unitsText=n+' '+u+(n!==1?'s':'')}
+  const absBal=Math.abs(bal);
+  if(absBal>0){
+    const prefix=bal>0?'Unpaid: ':'Paid in Advance: ';
+    if(p.type==='fixed'&&p.rate>0){const n=rd2(absBal/p.rate);unitsText=prefix+n+' session'+(n!==1?'s':'')}
+    else if(p.type==='daily'&&p.rate>0){const n=rd2(absBal/p.rate);unitsText=prefix+n+' day'+(n!==1?'s':'')}
+    else if(p.type==='hourly'&&p.rate>0){const n=rd2(absBal/p.rate);unitsText=prefix+n+' hour'+(n!==1?'s':'')}
+    else if(p.type==='customrate'&&p.customRateAmt>0){const n=rd2(absBal/p.customRateAmt*p.customRateMin);const u=p.customRateUnit==='hr'?'hour':'min';unitsText=prefix+n+' '+u+(n!==1?'s':'')}
   }
   document.getElementById('dBalUnits').textContent=unitsText;
   document.getElementById('activityWaBtn').innerHTML=waShareBtn('showActivityShareSummary()');
