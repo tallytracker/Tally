@@ -126,8 +126,6 @@ summary::-webkit-details-marker{display:none}summary::marker{display:none}
 .toggle-switch.on{background:var(--accent)}
 .toggle-knob{width:22px;height:22px;border-radius:11px;background:#fff;position:absolute;top:3px;left:3px;transition:left .2s ease;box-shadow:0 1px 4px rgba(0,0,0,.15)}
 .toggle-switch.on .toggle-knob{left:23px}
-.toggle input:checked~.toggle-bg{background:var(--green-btn)}
-.toggle input:checked~.toggle-knob{left:23px}
 
 .form-submit{width:100%;padding:16px;border-radius:12px;border:none;background:var(--text);color:#fff;font-weight:700;font-size:15px;margin-top:8px;transition:transform .15s ease}
 .form-submit:active{transform:scale(.97)}
@@ -282,7 +280,6 @@ summary::-webkit-details-marker{display:none}summary::marker{display:none}
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
 
@@ -448,11 +445,10 @@ summary::-webkit-details-marker{display:none}summary::marker{display:none}
     <button style="background:none;border:none;font-size:13px;color:var(--text-muted);font-weight:600" onclick="archiveCurrentProject()">Remove</button>
   </div>
   <p class="detail-type" id="detailType"></p>
-  <div class="balance-card" style="margin-top:16px;position:relative">
+  <div class="balance-card" style="margin-top:16px">
     <span class="balance-label" id="dBalLabel">All settled</span>
     <span class="balance-amount balance-zero" id="dBalAmt">$0</span>
     <span style="font-size:15px;color:var(--text-mid);margin-top:8px;font-weight:600" id="dBalUnits"></span>
-    <span id="activityWaBtn"></span>
   </div>
   <div class="detail-actions">
     <button class="detail-btn btn-add-session" onclick="showAddCharge()">
@@ -659,19 +655,6 @@ summary::-webkit-details-marker{display:none}summary::marker{display:none}
     <p class="form-hint">Used at the top of PDF exports and invoices. Leave blank to use your first name.</p>
   </div>
   <button class="form-submit" onclick="saveSettings()">Save Settings</button>
-  <div style="margin-top:32px;padding-top:24px;border-top:1.5px solid var(--border)">
-    <div class="form-label" style="margin-bottom:4px">Session Reminders</div>
-    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.5">Get a notification at the end of the day to log any unrecorded sessions.</p>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-      <span style="font-size:14px;font-weight:600">Enable reminders</span>
-      <label class="toggle" style="position:relative;width:48px;height:28px;display:inline-block"><input type="checkbox" id="sReminders" onchange="toggleReminders(this.checked)" style="display:none"><span class="toggle-bg" style="position:absolute;inset:0;background:var(--border);border-radius:14px;transition:background .2s;cursor:pointer"></span><span class="toggle-knob" style="position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:11px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.15);transition:left .2s"></span></label>
-    </div>
-    <div id="reminderTimeRow" style="display:none;margin-bottom:8px">
-      <label style="font-size:13px;color:var(--text-mid);margin-right:8px">Remind me at</label>
-      <input type="time" id="sReminderTime" value="20:00" class="form-input" style="width:auto;display:inline-block" onchange="saveReminderTime()">
-    </div>
-    <p id="reminderStatus" style="font-size:12px;color:var(--text-muted);margin-top:6px"></p>
-  </div>
   <div style="margin-top:32px;padding-top:24px;border-top:1.5px solid var(--border)">
     <div class="form-label" style="margin-bottom:12px">Send Feedback</div>
     <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.5">Found a bug? Have an idea? I'd love to hear it — your feedback shapes what gets built next.</p>
@@ -1288,9 +1271,6 @@ function formatDuration(input){
   return h+'hr'+(h!==1?'s':'')+' '+m+'min';
 }
 function rd2(n){return Math.round(n*100)/100}
-// WhatsApp share icon for balance cards. onclick should call the relevant share function.
-const WA_ICON_SVG='<svg width="22" height="22" viewBox="0 0 24 24" fill="#25D366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>';
-function waShareBtn(onclickFn){return'<button onclick="'+onclickFn+'" style="position:absolute;bottom:12px;right:14px;background:none;border:none;padding:4px;cursor:pointer;opacity:0.5" aria-label="Share on WhatsApp">'+WA_ICON_SVG+'</button>'}
 
 // Convert legacy time labels like "0.79hrs", "1.5 hr", "2.0hrs" inside a note
 // to readable "Xhr Ymin". Only fractional/decimal forms are touched — clean
@@ -1324,11 +1304,6 @@ function isPay(p){return p.direction!=='earn'}
 //
 //   pay activity  (I pay them):    payer = me,    receiver = them
 //   earn activity (they pay me):   payer = them,  receiver = me
-//
-// payerLabel / receiverLabel are VIEWER-AWARE versions for action buttons:
-//   Returns "I" when the current viewer IS that role, else the actual name.
-//   Used for buttons ("I Paid" vs "Rita Paid") — NOT for the balance card
-//   or share summaries (which always use full names via payerName/receiverName).
 function myName(){return settings.name||'You'}
 function otherName(p){
   if(!p)return'Other';
@@ -1337,12 +1312,6 @@ function otherName(p){
 }
 function payerName(p){return isPay(p)?myName():otherName(p)}
 function receiverName(p){return isPay(p)?otherName(p):myName()}
-// Viewer-aware labels for buttons and action text.
-// Returns "I" when the current viewer IS the payer/receiver,
-// otherwise returns the actual name. Used for buttons like "I Paid"
-// vs "Rita Paid" — NOT for the balance card (which always uses full names).
-function payerLabel(p){return isPay(p)?'I':otherName(p)}
-function receiverLabel(p){return isPay(p)?otherName(p):'I'}
 function balLabel(p){
   const bal=p.balance||0;
   if(p.type==='project'){return bal===0?'No expenses':'Total Spent'}
@@ -1697,14 +1666,6 @@ function saveProjectForm(){
 function openSettings(){
   document.getElementById('sName').value=settings.name||'';
   document.getElementById('sExportName').value=settings.exportName||'';
-  // Init reminder toggle state
-  const toggle=document.getElementById('sReminders');
-  if(toggle)toggle.checked=!!settings.remindersEnabled;
-  const timeRow=document.getElementById('reminderTimeRow');
-  if(timeRow)timeRow.style.display=settings.remindersEnabled?'flex':'none';
-  const timeInput=document.getElementById('sReminderTime');
-  if(timeInput)timeInput.value=settings.reminderTime||'20:00';
-  updateReminderStatus();
   renderArchivedList();
   renderAuthCard();
   stopTick();showView('settingsView');
@@ -1720,137 +1681,6 @@ function saveSettings(){
   delete settings.invoiceInfo;
   db.saveSettings();
   showToast('Settings saved');goBack();
-}
-
-// ===== SESSION REMINDERS =====
-// Local notifications that fire at a user-chosen time (default 8pm) on days
-// where activities are scheduled but no session has been logged yet.
-// Fully client-side — no server or FCM needed.
-let reminderTimeout=null;
-
-function toggleReminders(enabled){
-  if(enabled){
-    // Request notification permission
-    if(!('Notification' in window)){
-      showToast('Notifications not supported on this browser');
-      document.getElementById('sReminders').checked=false;
-      return;
-    }
-    Notification.requestPermission().then(perm=>{
-      if(perm==='granted'){
-        settings.remindersEnabled=true;
-        settings.reminderTime=settings.reminderTime||'20:00';
-        db.saveSettings();
-        document.getElementById('reminderTimeRow').style.display='flex';
-        document.getElementById('sReminderTime').value=settings.reminderTime;
-        scheduleReminder();
-        updateReminderStatus();
-      }else{
-        showToast('Please allow notifications to enable reminders');
-        document.getElementById('sReminders').checked=false;
-        settings.remindersEnabled=false;
-        db.saveSettings();
-      }
-    });
-  }else{
-    settings.remindersEnabled=false;
-    db.saveSettings();
-    document.getElementById('reminderTimeRow').style.display='none';
-    if(reminderTimeout){clearTimeout(reminderTimeout);reminderTimeout=null}
-    updateReminderStatus();
-  }
-}
-
-function saveReminderTime(){
-  settings.reminderTime=document.getElementById('sReminderTime').value||'20:00';
-  db.saveSettings();
-  scheduleReminder();
-  updateReminderStatus();
-  showToast('Reminder time updated');
-}
-
-function updateReminderStatus(){
-  const el=document.getElementById('reminderStatus');
-  if(!el)return;
-  if(settings.remindersEnabled){
-    el.textContent='Reminders active — you\'ll be notified at '+formatTime12(settings.reminderTime)+' on days with scheduled sessions.';
-    el.style.color='var(--green)';
-  }else{
-    el.textContent='';
-  }
-}
-
-function formatTime12(t){
-  if(!t)return'8:00 PM';
-  const[h,m]=t.split(':').map(Number);
-  const ampm=h>=12?'PM':'AM';
-  const h12=h%12||12;
-  return h12+':'+(m<10?'0':'')+m+' '+ampm;
-}
-
-// Schedule the next reminder check. Uses setTimeout to fire at the chosen
-// time today (or tomorrow if the time has already passed).
-function scheduleReminder(){
-  if(reminderTimeout){clearTimeout(reminderTimeout);reminderTimeout=null}
-  if(!settings.remindersEnabled)return;
-  const time=settings.reminderTime||'20:00';
-  const[h,m]=time.split(':').map(Number);
-  const now=new Date();
-  const target=new Date(now);
-  target.setHours(h,m,0,0);
-  // If the target time already passed today, schedule for tomorrow
-  if(target<=now)target.setDate(target.getDate()+1);
-  const ms=target-now;
-  reminderTimeout=setTimeout(()=>{
-    fireSessionReminder();
-    // Schedule next day's reminder
-    scheduleReminder();
-  },ms);
-}
-
-// Check which activities are scheduled for today but haven't been logged,
-// and send a notification for each (or a grouped one).
-function fireSessionReminder(){
-  if(!settings.remindersEnabled)return;
-  if(!('Notification' in window)||Notification.permission!=='granted')return;
-  const today=new Date(),dow=today.getDay(),todayStr=today.toISOString().split('T')[0];
-  const pending=projects.filter(p=>{
-    if(p.type==='project'||p.type==='lending')return false; // only activities
-    if(p.archived)return false;
-    if(!p.days||!p.days.includes(dow))return false;
-    // Check if a session was already logged today
-    return!(p.history||[]).some(h=>h.date.split('T')[0]===todayStr&&(h.type==='charge'||h.type==='skipped'));
-  });
-  if(!pending.length)return;
-  if(pending.length===1){
-    const p=pending[0];
-    new Notification('Tally — Session Reminder',{
-      body:'Did you have your '+p.name+' session today? Tap to log it.',
-      icon:'icon-192.png',
-      tag:'tally-reminder-'+todayStr,
-      renotify:true
-    });
-  }else{
-    const names=pending.map(p=>p.name).join(', ');
-    new Notification('Tally — Session Reminders',{
-      body:'You have '+pending.length+' unlogged sessions today: '+names+'. Tap to log them.',
-      icon:'icon-192.png',
-      tag:'tally-reminder-'+todayStr,
-      renotify:true
-    });
-  }
-}
-
-// Initialize reminders on app start
-function initReminders(){
-  const toggle=document.getElementById('sReminders');
-  if(toggle)toggle.checked=!!settings.remindersEnabled;
-  const timeRow=document.getElementById('reminderTimeRow');
-  if(timeRow)timeRow.style.display=settings.remindersEnabled?'flex':'none';
-  const timeInput=document.getElementById('sReminderTime');
-  if(timeInput&&settings.reminderTime)timeInput.value=settings.reminderTime;
-  if(settings.remindersEnabled)scheduleReminder();
-  updateReminderStatus();
 }
 
 // ===== FEEDBACK =====
@@ -2199,33 +2029,60 @@ function renderDetail(){
   const tl=p.type==='fixed'?`${cur(p)}${p.rate} / session`:p.type==='daily'?`${cur(p)}${p.rate} / day`:p.type==='hourly'?`${cur(p)}${p.rate} / hour`:p.type==='customrate'?`${cur(p)}${p.customRateAmt} / ${p.customRateMin}${p.customRateUnit==='hr'?'hr':'min'}`:p.type==='lending'?`${(p.participants||[]).length} people`:'Project';
   const ds=p.days&&p.days.length?' · '+p.days.map(d=>DAY_NAMES[d]).join(', '):'';
   const gName=p.groupId&&getGroup(p.groupId)?getGroup(p.groupId).name+' · ':'';
-  const dirBadge=p.type==='project'?'':pay?'<span class="detail-dir-badge badge-pay">I PAY</span>':'<span class="detail-dir-badge badge-earn">I EARN</span>';
+  const dirBadge=p.type==='project'?'':pay?'<span class="detail-dir-badge badge-pay">'+esc(myName())+' PAYS</span>':'<span class="detail-dir-badge badge-earn">'+esc(myName())+' EARNS</span>';
   document.getElementById('detailType').innerHTML=gName+tl+ds+' '+dirBadge;
 
   syncBalance(p);
-  const bal=p.balance||0,abs=Math.round(Math.abs(bal));
+  const bal=p.balance||0,abs=rd2(Math.abs(bal));
   const lbl=document.getElementById('dBalLabel'),amt=document.getElementById('dBalAmt');
   lbl.textContent=balLabel(p);
   amt.textContent=cur(p)+abs;
   amt.className='balance-amount '+balColorClass(p);
 
-  // Units text: shows how many sessions/hours/days the BALANCE represents
-  // with a label: "Unpaid: 5 sessions" or "Paid in Advance: 2 sessions"
+  // Units text: shows how many sessions/hours the BALANCE represents
+  // bal > 0 = unpaid → "That's X sessions"
+  // bal < 0 = paid in advance → "Covers X sessions"
+  // For sessions/days: round to whole number, add "+" if remainder
+  // For hours: show as "X hrs Y min"
   let unitsText='';
   const absBal=Math.abs(bal);
   if(absBal>0){
-    const prefix=bal>0?'Unpaid: ':'Paid in Advance: ';
-    if(p.type==='fixed'&&p.rate>0){const n=rd2(absBal/p.rate);unitsText=prefix+n+' session'+(n!==1?'s':'')}
-    else if(p.type==='daily'&&p.rate>0){const n=rd2(absBal/p.rate);unitsText=prefix+n+' day'+(n!==1?'s':'')}
-    else if(p.type==='hourly'&&p.rate>0){const n=rd2(absBal/p.rate);unitsText=prefix+n+' hour'+(n!==1?'s':'')}
-    else if(p.type==='customrate'&&p.customRateAmt>0){const n=rd2(absBal/p.customRateAmt*p.customRateMin);const u=p.customRateUnit==='hr'?'hour':'min';unitsText=prefix+n+' '+u+(n!==1?'s':'')}
+    const prefix=bal>0?"That's ":"Covers ";
+    if(p.type==='fixed'&&p.rate>0){
+      const exact=absBal/p.rate;const whole=Math.floor(exact);const hasRem=exact>whole;
+      if(whole>0)unitsText=prefix+whole+(hasRem?'+ ':' ')+'session'+(whole!==1||hasRem?'s':'');
+    }else if(p.type==='daily'&&p.rate>0){
+      const exact=absBal/p.rate;const whole=Math.floor(exact);const hasRem=exact>whole;
+      if(whole>0)unitsText=prefix+whole+(hasRem?'+ ':' ')+'day'+(whole!==1||hasRem?'s':'');
+    }else if(p.type==='hourly'&&p.rate>0){
+      const totalMin=Math.round(absBal/p.rate*60);
+      const h=Math.floor(totalMin/60);const m=totalMin%60;
+      let dur='';
+      if(h>0&&m>0)dur=h+' hr'+(h!==1?'s':'')+' '+m+' min';
+      else if(h>0)dur=h+' hr'+(h!==1?'s':'');
+      else if(m>0)dur=m+' min';
+      if(dur)unitsText=prefix+dur;
+    }else if(p.type==='customrate'&&p.customRateAmt>0){
+      const totalCustom=absBal/p.customRateAmt*p.customRateMin;
+      if(p.customRateUnit==='hr'){
+        const totalMin=Math.round(totalCustom*60);
+        const h=Math.floor(totalMin/60);const m=totalMin%60;
+        let dur='';
+        if(h>0&&m>0)dur=h+' hr'+(h!==1?'s':'')+' '+m+' min';
+        else if(h>0)dur=h+' hr'+(h!==1?'s':'');
+        else if(m>0)dur=m+' min';
+        if(dur)unitsText=prefix+dur;
+      }else{
+        const whole=Math.floor(totalCustom);const hasRem=totalCustom>whole;
+        if(whole>0)unitsText=prefix+whole+(hasRem?'+ ':' ')+'min'+(whole!==1||hasRem?'s':'');
+      }
+    }
   }
   document.getElementById('dBalUnits').textContent=unitsText;
-  document.getElementById('activityWaBtn').innerHTML=waShareBtn('showActivityShareSummary()');
 
   document.getElementById('dAddLabel').textContent=p.type==='project'?'Add Expense':'Add Session';
-  // Payment button label: "I Paid" if current viewer is the payer, else "Name Paid"
-  document.getElementById('dPayLabel').textContent=payerLabel(p)+' Paid';
+  // Payment button label = name of the PAYER, derived from payerName().
+  document.getElementById('dPayLabel').textContent=payerName(p)+' Paid';
   document.getElementById('chargeInput').innerHTML='';
   document.getElementById('payInput').innerHTML='';
 
@@ -2534,7 +2391,7 @@ function showPayInput(){
   chargeOpen=false;document.getElementById('chargeInput').innerHTML='';
   payOpen=!payOpen;
   if(!payOpen){document.getElementById('payInput').innerHTML='';return}
-  const label=isPay(p)?'Amount I paid…':'Amount I received…';
+  const label=isPay(p)?'Amount '+myName()+' paid…':'Amount '+myName()+' received…';
   document.getElementById('payInput').innerHTML=`<div class="input-row"><input class="input-field" type="number" inputmode="decimal" placeholder="${label}" id="payVal" autofocus><button class="input-confirm" onclick="confirmPay()">Confirm</button></div>`;
   document.getElementById('payVal').focus();
 }
@@ -2587,29 +2444,29 @@ function renderProjectDetail(){
     const pct=Math.min(100,Math.round((spent/budget)*100));
     const overBudget=remaining<0;
     const barColor=overBudget?'var(--red)':'var(--green)';
-    html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px;position:relative"><span class="balance-label">Budget</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${budget}</span>${waShareBtn('showShareSummary()')}</div>`;
+    html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Budget</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${budget}</span></div>`;
     html+=`<div style="display:flex;justify-content:space-between;margin-bottom:6px">`;
-    html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--text)">${c}${Math.round(spent)}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Spent</div></div>`;
-    html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:${overBudget?'var(--red)':'var(--accent)'}">${c}${Math.round(Math.abs(remaining))}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">${overBudget?'Over Budget':'Remaining'}</div></div>`;
+    html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--text)">${c}${spent}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Spent</div></div>`;
+    html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:${overBudget?'var(--red)':'var(--accent)'}">${c}${rd2(Math.abs(remaining))}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">${overBudget?'Over Budget':'Remaining'}</div></div>`;
     if(!pay&&!isGroup&&totalIn>0){
-      html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--green)">${c}${Math.round(totalIn)}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Received</div></div>`;
+      html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--green)">${c}${totalIn}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Received</div></div>`;
     }
     html+=`</div>`;
     html+=`<div style="background:var(--border);border-radius:6px;height:8px;margin-bottom:4px;overflow:hidden"><div style="background:${barColor};height:100%;width:${pct}%;border-radius:6px;transition:width .4s ease"></div></div>`;
     html+=`<div style="text-align:right;margin-bottom:14px"><span style="font-size:12px;font-weight:700;color:${overBudget?'var(--red)':'var(--text-muted)'}">${pct}%</span></div>`;
   }else{
     if(pay&&!isGroup){
-      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px;position:relative"><span class="balance-label">Total Spent</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${Math.round(totalOut)}</span>${waShareBtn('showShareSummary()')}</div>`;
+      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Total Spent</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${totalOut}</span></div>`;
     }else if(!pay&&!isGroup){
-      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px;position:relative"><span class="balance-label">Total Expenses</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${Math.round(totalOut)}</span>${waShareBtn('showShareSummary()')}</div>`;
+      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Total Expenses</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${totalOut}</span></div>`;
       if(totalIn>0){
         html+=`<div style="display:flex;justify-content:space-between;margin-bottom:16px">`;
-        html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--green)">${c}${Math.round(totalIn)}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Received</div></div>`;
-        html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:${totalOut-totalIn>0?'var(--red)':'var(--green)'}">${c}${Math.round(Math.abs(totalOut-totalIn))}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">${totalOut-totalIn>0?'Outstanding':'Profit'}</div></div>`;
+        html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--green)">${c}${totalIn}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Received</div></div>`;
+        html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:${totalOut-totalIn>0?'var(--red)':'var(--green)'}">${c}${rd2(Math.abs(totalOut-totalIn))}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">${totalOut-totalIn>0?'Outstanding':'Profit'}</div></div>`;
         html+=`</div>`;
       }
     }else{
-      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px;position:relative"><span class="balance-label">Total Expenses</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${Math.round(totalOut)}</span><span style="font-size:12px;color:var(--text-muted);margin-top:6px">${p.participants.length} people</span>${waShareBtn('showShareSummary()')}</div>`;
+      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Total Expenses</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${totalOut}</span><span style="font-size:12px;color:var(--text-muted);margin-top:6px">${p.participants.length} people</span></div>`;
     }
   }
   html+=`<div style="text-align:center;margin-bottom:14px"><button onclick="showEditBudget()" style="background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer">${budget?'Edit Budget':'Set Budget'}</button></div>`;
@@ -2645,7 +2502,7 @@ function renderProjectDetail(){
     const transfers=calcTransfers(balances);
     const allSettled=transfers.length===0;
 
-    settlementHtml+='<div id="projSettleUpSection" style="margin-bottom:16px">';
+    settlementHtml+='<div style="margin-bottom:16px">';
     if(allSettled){
       settlementHtml+='<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px 18px;text-align:center;box-shadow:var(--shadow-sm)"><span style="font-size:15px;font-weight:600;color:var(--text-light)">✅ All settled up!</span></div>';
     }else{
@@ -2713,12 +2570,12 @@ function renderProjectDetail(){
     actionsHtml+='<div style="margin-top:8px"><button class="detail-btn btn-add-payment" style="width:100%" onclick="showProjectSettleConfirm()"><span class="btn-icon">✓</span> Settle & Reset</button></div>';
   }else if(pay){
     actionsHtml+='<div class="detail-actions" style="margin-top:16px">';
-    actionsHtml+='<button class="detail-btn btn-add-payment" style="width:100%" onclick="showProjectPayInput()"><span class="btn-icon">$</span> '+esc(payerLabel(p))+' Paid '+esc(receiverLabel(p))+'</button>';
+    actionsHtml+='<button class="detail-btn btn-add-payment" style="width:100%" onclick="showProjectPayInput()"><span class="btn-icon">$</span> '+esc(payerName(p))+' Paid '+esc(receiverName(p))+'</button>';
     actionsHtml+='</div>';
   }else{
     actionsHtml+='<div class="detail-actions" style="margin-top:16px">';
     actionsHtml+='<button class="detail-btn btn-add-session" onclick="showProjectExpenseInput()"><span class="btn-icon">＋</span> Add Expense</button>';
-    actionsHtml+='<button class="detail-btn btn-add-payment" onclick="showProjectPayInput()"><span class="btn-icon">$</span> '+esc(payerLabel(p))+' Paid</button>';
+    actionsHtml+='<button class="detail-btn btn-add-payment" onclick="showProjectPayInput()"><span class="btn-icon">$</span> '+esc(payerName(p))+' Paid</button>';
     actionsHtml+='</div>';
   }
   document.getElementById('projActions').innerHTML=actionsHtml;
@@ -2944,7 +2801,7 @@ function showProjectPayInput(){
     <div class="input-row"><input class="input-field" type="number" inputmode="decimal" placeholder="Amount…" id="projPayAmt" autofocus></div>
     ${catPicker}
     <div class="input-row"><input class="input-field" type="text" placeholder="Description (optional)" id="projPayNote" style="font-size:14px"></div>
-    <button class="input-confirm" style="width:100%;padding:14px" onclick="confirmProjectPay()">${esc(payerLabel(p))} Paid</button>
+    <button class="input-confirm" style="width:100%;padding:14px" onclick="confirmProjectPay()">${esc(payerName(p))} Paid</button>
   </div>`;
   document.getElementById('projPayAmt').focus();
 }
@@ -3112,70 +2969,19 @@ function doProjectSettle(){
   db.saveProject(p);closeOverlay();renderProjectDetail();showToast('Settled! History preserved');
 }
 
-// ===== SHARE WITH CARD IMAGE =====
-// Clones the given element(s) offscreen, captures with html2canvas, and
-// shares as image + text via the Web Share API. Falls back to text-only
-// WhatsApp share if anything fails (no html2canvas, no Web Share API,
-// canvas error, user cancels, etc).
-// cardEls can be a single element or an array of elements to capture together.
-// Optional title is shown above the card(s) in the captured image.
-async function shareCardImage(cardEls, shareText, fallbackText, title){
-  try{
-    if(typeof html2canvas==='undefined'||!navigator.canShare) throw new Error('unsupported');
-    const els=Array.isArray(cardEls)?cardEls:[cardEls];
-    // Use width of the first element for the container
-    const rect=els[0].getBoundingClientRect();
-    const container=document.createElement('div');
-    container.style.cssText='position:fixed;left:-9999px;top:0;width:'+rect.width+'px;z-index:-1;pointer-events:none;padding:16px';
-    container.style.background='var(--bg)';
-    // Add activity/project name above the card
-    if(title){
-      const header=document.createElement('div');
-      header.style.cssText='font-family:Sora,sans-serif;font-size:20px;font-weight:700;color:#2c2418;text-align:center;margin-bottom:12px';
-      header.textContent=title;
-      container.appendChild(header);
-    }
-    // Clone all elements into the container
-    els.forEach(el=>{
-      if(!el)return;
-      const clone=el.cloneNode(true);
-      // Strip per-person breakdown (collapsed details) — keep only settle-up cards
-      clone.querySelectorAll('details').forEach(d=>d.remove());
-      container.appendChild(clone);
-    });
-    // Add Tally branding below
-    const branding=document.createElement('div');
-    branding.style.cssText='display:flex;align-items:center;gap:10px;justify-content:center;padding:18px 0 6px';
-    branding.innerHTML='<svg width="28" height="28" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="#e67e22"/><g transform="translate(7.5,8)"><rect x="0" y="0" width="28" height="7" rx="1.5" fill="#fff"/><rect x="10" y="0" width="8" height="32" rx="1.5" fill="#fff"/><rect x="20" y="10" width="13" height="6" rx="1.3" fill="#fff" opacity=".95"/><rect x="20" y="18" width="10" height="6" rx="1.3" fill="#fff" opacity=".7"/><rect x="20" y="26" width="7" height="6" rx="1.3" fill="#fff" opacity=".45"/></g></svg><span style="font-family:Sora,sans-serif;font-size:16px;font-weight:700;color:#2c2418">Tally</span>';
-    container.appendChild(branding);
-    document.body.appendChild(container);
-    // Capture
-    const canvas=await html2canvas(container,{backgroundColor:getComputedStyle(document.body).getPropertyValue('--bg').trim()||'#f7f5f2',scale:2,logging:false,useCORS:true});
-    document.body.removeChild(container);
-    // Convert to blob
-    const blob=await new Promise((res,rej)=>{canvas.toBlob(b=>b?res(b):rej('blob failed'),'image/png')});
-    const file=new File([blob],'tally-balance.png',{type:'image/png'});
-    // Check if sharing files is supported
-    if(!navigator.canShare({files:[file]})) throw new Error('no file share');
-    await navigator.share({text:shareText,files:[file]});
-  }catch(e){
-    // Fallback: text-only WhatsApp share
-    if(e&&e.name==='AbortError')return; // user cancelled share sheet — do nothing
-    window.open('https://wa.me/?text='+encodeURIComponent(fallbackText),'_blank');
-  }
-}
-
 function showShareSummary(){
   const p=getProject(currentProjectId);if(!p)return;
   const c=cur(p);
   const isGroup=p.participants&&p.participants.length>0;
   const currentHist=getEntriesSinceLastSettlement(p);
+  let text='📲 *Tally* — '+p.name+'\n';
+  if(p.budget)text+='Budget: '+c+p.budget+'\n';
   const totalExp=rd2(currentHist.filter(h=>h.type==='charge').reduce((s,h)=>s+h.amount,0));
   const totalPaid=rd2(currentHist.filter(h=>h.type==='payment'&&!h.from).reduce((s,h)=>s+h.amount,0));
-
-  let status='';
   if(isGroup){
-    status='Total Expenses: '+c+totalExp;
+    // Group projects: multiple people pay, "Total Expenses" stays meaningful
+    text+='Total Expenses: '+c+totalExp+'\n';
+    if(totalPaid)text+='Total Paid: '+c+totalPaid+'\n';
     const parts=p.participants;
     const paidMap={};const owesMap={};
     parts.forEach(n=>{paidMap[n]=0;owesMap[n]=0});
@@ -3187,39 +2993,22 @@ function showShareSummary(){
     currentHist.filter(h=>h.type==='payment'&&h.from&&h.to).forEach(h=>{if(paidMap[h.from]!==undefined)paidMap[h.from]+=h.amount;if(paidMap[h.to]!==undefined)paidMap[h.to]-=h.amount});
     const bals={};parts.forEach(n=>{bals[n]=rd2(paidMap[n]-owesMap[n])});
     const transfers=calcTransfers(bals);
-    if(transfers.length===0){
-      status+='\nAll settled!';
-    }else{
-      status+='\n\nSettle Up:\n';
-      transfers.forEach(t=>{status+=t.from+' → '+t.to+': '+c+rd2(t.amount)+'\n'});
-    }
+    text+='\n👥 Settle Up:\n';
+    if(transfers.length===0)text+='✅ All settled!\n';
+    else transfers.forEach(t=>{text+='💸 '+t.from+' → '+t.to+': '+c+rd2(t.amount)+'\n'});
   }else{
-    status='Paid: '+c+totalExp;
+    // Solo project: user is the one paying, so "Paid" + "Remaining" reads naturally
+    text+='Paid: '+c+totalExp+'\n';
     if(p.budget){
       const remaining=rd2(p.budget-totalExp);
-      if(remaining>0)status+='\nRemaining: '+c+remaining;
-      else if(remaining<0)status+='\nOver Budget by: '+c+rd2(Math.abs(remaining));
-      else status+='\nBudget fully used';
+      if(remaining>0)text+='Remaining Balance to Pay: '+c+remaining+'\n';
+      else if(remaining<0)text+='Over Budget by: '+c+rd2(Math.abs(remaining))+'\n';
+      else text+='✅ Budget fully used\n';
     }
   }
-
-  // Text that accompanies the image
-  const shareText='Hi there, I\'m using the Tally app to track our balance. Here\'s our current status for '+p.name+'.\n\n🟧 Tally — the simple balance tracker. Try it for free!';
-  // Fallback text-only (full details)
-  let fallbackText='🟧 *Tally*\n\n';
-  fallbackText+='Hi there, I\'m using the app Tally to track our balance. Below is our current balance status:\n\n';
-  fallbackText+='*'+p.name+'*\n';
-  fallbackText+='👉 '+status+'\n\n';
-  fallbackText+='_Tracked with Tally_\n';
-  fallbackText+='_The simple balance tracker — try it free!_';
-
-  // Try image share, fall back to text
-  // For group projects, capture both the budget card and the settle-up section
-  const budgetEl=document.getElementById('projBudgetSummary');
-  const settleEl=document.getElementById('projSettleUpSection');
-  const captureEls=settleEl?[budgetEl,settleEl]:[budgetEl];
-  if(budgetEl)shareCardImage(captureEls,shareText,fallbackText,p.name);
-  else window.open('https://wa.me/?text='+encodeURIComponent(fallbackText),'_blank');
+  text+='\n_Tracked with Tally_ 📲\n_The simple balance tracker — try it free!_';
+  const encoded=encodeURIComponent(text);
+  window.open('https://wa.me/?text='+encoded,'_blank');
 }
 
 function doDeleteProjectEntry(entryId){
@@ -3379,7 +3168,7 @@ function renderLendingDetail(){
   const c=cur(p);
   const{balances,parts,totalMoved}=calcLendingSettlement(p);
 
-  let html=`<div class="balance-card" style="margin-top:0;margin-bottom:16px;position:relative"><span class="balance-label">Total Transactions</span><span class="balance-amount" style="color:var(--text)">${c}${Math.round(totalMoved)}</span><span style="font-size:12px;color:var(--text-muted);margin-top:6px">${parts.length} people</span>${waShareBtn('showLendingShareSummary()')}</div>`;
+  let html=`<div class="balance-card" style="margin-top:0;margin-bottom:16px"><span class="balance-label">Total Transactions</span><span class="balance-amount" style="color:var(--text)">${c}${totalMoved}</span><span style="font-size:12px;color:var(--text-muted);margin-top:6px">${parts.length} people</span></div>`;
 
   const shouldPay=parts.filter(n=>balances[n]<-0.01).sort((a,b)=>balances[a]-balances[b]);
   const shouldReceive=parts.filter(n=>balances[n]>0.01).sort((a,b)=>balances[b]-balances[a]);
@@ -3568,56 +3357,31 @@ function showLendingShareSummary(){
   const c=cur(p);
   const{balances,parts,totalMoved}=calcLendingSettlement(p);
   const transfers=calcTransfers(balances);
-
-  let status='Total Transactions: '+c+totalMoved;
-  if(transfers.length===0){
-    status+='\nAll settled!';
-  }else{
-    status+='\n\nSettle Up:\n';
-    transfers.forEach(t=>{status+=t.from+' → '+t.to+': '+c+rd2(t.amount)+'\n'});
-  }
-
-  // Text that accompanies the image
-  const shareText='Hi there, I\'m using the Tally app to track our balance. Here\'s our current status for '+p.name+'.\n\n🟧 Tally — the simple balance tracker. Try it for free!';
-  // Fallback text-only
-  let fallbackText='🟧 *Tally*\n\n';
-  fallbackText+='Hi there, I\'m using the app Tally to track our balance. Below is our current balance status:\n\n';
-  fallbackText+='*'+p.name+'*\n';
-  fallbackText+='👉 '+status+'\n\n';
-  fallbackText+='_Tracked with Tally_\n';
-  fallbackText+='_The simple balance tracker — try it free!_';
-
-  // Capture the entire lending summary (balance card + settle-up)
-  const cardEl=document.getElementById('lendingSummary');
-  if(cardEl)shareCardImage(cardEl,shareText,fallbackText,p.name);
-  else window.open('https://wa.me/?text='+encodeURIComponent(fallbackText),'_blank');
+  let text='📊 *Tally* — '+p.name+'\nTotal Transactions: '+c+totalMoved+'\n\n👥 Settle Up:\n';
+  if(transfers.length===0)text+='✅ All settled!\n';
+  else transfers.forEach(t=>{text+='💸 '+t.from+' → '+t.to+': '+c+rd2(t.amount)+'\n'});
+  text+='\n_Tracked with Tally_ 📊\n_The simple balance tracker — try it free!_';
+  window.open('https://wa.me/?text='+encodeURIComponent(text),'_blank');
 }
 
 function showActivityShareSummary(){
   const p=getProject(currentProjectId);if(!p)return;
   const c=cur(p);
+  const pay=isPay(p);
   const bal=p.balance||0;
   const abs=rd2(Math.abs(bal));
+  let text='Hi there, I\'m using the app Tally to track our balance. Below is the balance status:\n\n';
+  text+='📲 *Tally* — '+p.name+'\n';
   const payer=payerName(p),receiver=receiverName(p);
-  let status='';
-  if(bal===0)status='All settled!';
-  else if(bal>0)status=payer+' to pay '+receiver+': '+c+abs;
-  else status=payer+' paid '+c+abs+' in advance';
-
-  // Text that accompanies the image
-  const shareText='Hi there, I\'m using the Tally app to track our balance. Here\'s our current status for '+p.name+'.\n\n🟧 Tally — the simple balance tracker. Try it for free!';
-  // Fallback text-only (full details)
-  let fallbackText='🟧 *Tally*\n\n';
-  fallbackText+='Hi there, I\'m using the app Tally to track our balance. Below is our current balance status:\n\n';
-  fallbackText+='*'+p.name+'*\n';
-  fallbackText+='👉 '+status+'\n\n';
-  fallbackText+='_Tracked with Tally_\n';
-  fallbackText+='_The simple balance tracker — try it free!_';
-
-  // The balance card is inside detailView
-  const cardEl=document.querySelector('#detailView .balance-card');
-  if(cardEl)shareCardImage(cardEl,shareText,fallbackText,p.name);
-  else window.open('https://wa.me/?text='+encodeURIComponent(fallbackText),'_blank');
+  if(bal===0)text+='\n✅ All settled!\n';
+  else if(bal>0){
+    // Outstanding balance: payer still owes the receiver.
+    text+='\n💰 '+payer+' to pay '+receiver+': '+c+abs+'\n';
+  }else{
+    text+='\n💰 '+payer+' paid '+c+abs+' in advance\n';
+  }
+  text+='\n_Tracked with Tally_ 📲\n_The simple balance tracker — try it free!_';
+  window.open('https://wa.me/?text='+encodeURIComponent(text),'_blank');
 }
 
 // ===== EXPORT =====
@@ -3800,8 +3564,8 @@ function startApp(){
   }
   renderAuthCard();
   updateSyncBadge();
-  initReminders();
 }
+// App is started by auth.onAuthStateChanged — not called directly here
 </script>
 <script>
 if('serviceWorker' in navigator){
