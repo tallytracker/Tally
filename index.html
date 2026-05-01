@@ -2047,7 +2047,7 @@ function renderDetail(){
   document.getElementById('detailType').innerHTML=gName+tl+ds+' '+dirBadge;
 
   syncBalance(p);
-  const bal=p.balance||0,abs=rd2(Math.abs(bal));
+  const bal=p.balance||0,abs=Math.round(Math.abs(bal));
   const lbl=document.getElementById('dBalLabel'),amt=document.getElementById('dBalAmt');
   lbl.textContent=balLabel(p);
   amt.textContent=cur(p)+abs;
@@ -2577,10 +2577,10 @@ function renderProjectDetail(){
   // Action buttons
   let actionsHtml='';
   if(isGroup){
-    actionsHtml+='<div style="margin-top:16px"><button class="detail-btn btn-add-session" style="width:100%;padding:16px;font-size:15px" onclick="showProjectExpenseInput()"><span class="btn-icon">＋</span> Add Expense</button></div>';
+    actionsHtml+='<div style="margin-top:16px"><button class="detail-btn btn-add-payment" style="width:100%;padding:16px;font-size:15px" onclick="showProjectExpenseInput()"><span class="btn-icon">＋</span> Add Expense</button></div>';
     actionsHtml+='<div class="detail-actions" style="margin-top:8px">';
     actionsHtml+='<button class="detail-btn" style="border:1.5px solid var(--border);background:var(--card);color:var(--text)" onclick="showProjectGroupPaymentInput()"><span class="btn-icon">↔</span> Settle Debt</button>';
-    actionsHtml+='<button class="detail-btn btn-add-payment" onclick="showProjectSettleConfirm()"><span class="btn-icon">✓</span> Settle All</button>';
+    actionsHtml+='<button class="detail-btn" style="border:1.5px solid var(--border);background:var(--card);color:var(--text)" onclick="showProjectSettleConfirm()"><span class="btn-icon">✓</span> Settle All</button>';
     actionsHtml+='</div>';
   }else if(pay){
     actionsHtml+='<div class="detail-actions" style="margin-top:16px">';
@@ -2641,8 +2641,8 @@ function saveBudgetEdit(){
 
 function buildCategoryPicker(p, elId){
   const used=getUsedCategories(p);
-  if(!used.length)return`<div style="margin-bottom:8px"><input class="input-field" type="text" placeholder="Category (e.g. Flights, Food; Woodwork, Lighting)" id="${elId}" style="font-size:14px;width:100%"></div>`;
-  return`<div style="margin-bottom:8px"><select class="form-select" id="${elId}" onchange="if(this.value==='__new__'){this.style.display='none';document.getElementById('${elId}New').style.display='';document.getElementById('${elId}New').focus()}"><option value="">No category</option>${used.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}<option value="__new__">＋ New category…</option></select><input class="input-field" type="text" placeholder="New category name…" id="${elId}New" style="font-size:14px;width:100%;display:none;margin-top:6px"></div>`;
+  if(!used.length)return`<div><input class="input-field" type="text" placeholder="Category (e.g. Flights, Food)" id="${elId}" style="font-size:14px;width:100%"></div>`;
+  return`<div><select class="form-select" id="${elId}" style="width:100%" onchange="if(this.value==='__new__'){this.style.display='none';document.getElementById('${elId}New').style.display='';document.getElementById('${elId}New').focus()}"><option value="">Category</option>${used.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}<option value="__new__">＋ New…</option></select><input class="input-field" type="text" placeholder="New category…" id="${elId}New" style="font-size:14px;width:100%;display:none;margin-top:6px"></div>`;
 }
 function getCategoryValue(elId){
   const sel=document.getElementById(elId);
@@ -2686,8 +2686,7 @@ function showProjectExpenseInput(){
   }
 
   el.innerHTML=`<div style="animation:slideDown .25s ease;margin-bottom:16px">
-    <div class="input-row"><input class="input-field" type="number" inputmode="decimal" placeholder="Amount…" id="projExpAmt" autofocus ${isGroup?'onchange="updateProjSplitPreview()" oninput="updateProjSplitPreview()"':''}></div>
-    ${catPicker}
+    <div style="display:flex;gap:8px;align-items:flex-start"><div style="flex:1"><input class="input-field" type="number" inputmode="decimal" placeholder="Amount…" id="projExpAmt" autofocus style="width:100%" ${isGroup?'onchange="updateProjSplitPreview()" oninput="updateProjSplitPreview()"':''}></div><div style="flex:1.6">${catPicker}</div></div>
     <div class="input-row"><input class="input-field" type="text" placeholder="Description (optional)" id="projExpNote" style="font-size:14px"></div>
     ${paidByOpts}
     ${splitHtml}
