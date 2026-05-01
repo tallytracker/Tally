@@ -1312,6 +1312,8 @@ function otherName(p){
 }
 function payerName(p){return isPay(p)?myName():otherName(p)}
 function receiverName(p){return isPay(p)?otherName(p):myName()}
+function payerLabel(p){return isPay(p)?'I':otherName(p)}
+function receiverLabel(p){return isPay(p)?otherName(p):'I'}
 function balLabel(p){
   const bal=p.balance||0;
   if(p.type==='project'){return bal===0?'No expenses':'Total Spent'}
@@ -2081,8 +2083,8 @@ function renderDetail(){
   document.getElementById('dBalUnits').textContent=unitsText;
 
   document.getElementById('dAddLabel').textContent=p.type==='project'?'Add Expense':'Add Session';
-  // Payment button label = name of the PAYER, derived from payerName().
-  document.getElementById('dPayLabel').textContent=payerName(p)+' Paid';
+  // Payment button label = viewer-aware: "I Paid" when you're the payer, else "Liam Paid".
+  document.getElementById('dPayLabel').textContent=payerLabel(p)+' Paid';
   document.getElementById('chargeInput').innerHTML='';
   document.getElementById('payInput').innerHTML='';
 
@@ -2570,12 +2572,12 @@ function renderProjectDetail(){
     actionsHtml+='<div style="margin-top:8px"><button class="detail-btn btn-add-payment" style="width:100%" onclick="showProjectSettleConfirm()"><span class="btn-icon">✓</span> Settle & Reset</button></div>';
   }else if(pay){
     actionsHtml+='<div class="detail-actions" style="margin-top:16px">';
-    actionsHtml+='<button class="detail-btn btn-add-payment" style="width:100%" onclick="showProjectPayInput()"><span class="btn-icon">$</span> '+esc(payerName(p))+' Paid '+esc(receiverName(p))+'</button>';
+    actionsHtml+='<button class="detail-btn btn-add-payment" style="width:100%" onclick="showProjectPayInput()"><span class="btn-icon">$</span> '+esc(payerLabel(p))+' Paid '+esc(receiverLabel(p))+'</button>';
     actionsHtml+='</div>';
   }else{
     actionsHtml+='<div class="detail-actions" style="margin-top:16px">';
     actionsHtml+='<button class="detail-btn btn-add-session" onclick="showProjectExpenseInput()"><span class="btn-icon">＋</span> Add Expense</button>';
-    actionsHtml+='<button class="detail-btn btn-add-payment" onclick="showProjectPayInput()"><span class="btn-icon">$</span> '+esc(payerName(p))+' Paid</button>';
+    actionsHtml+='<button class="detail-btn btn-add-payment" onclick="showProjectPayInput()"><span class="btn-icon">$</span> '+esc(payerLabel(p))+' Paid</button>';
     actionsHtml+='</div>';
   }
   document.getElementById('projActions').innerHTML=actionsHtml;
@@ -2801,7 +2803,7 @@ function showProjectPayInput(){
     <div class="input-row"><input class="input-field" type="number" inputmode="decimal" placeholder="Amount…" id="projPayAmt" autofocus></div>
     ${catPicker}
     <div class="input-row"><input class="input-field" type="text" placeholder="Description (optional)" id="projPayNote" style="font-size:14px"></div>
-    <button class="input-confirm" style="width:100%;padding:14px" onclick="confirmProjectPay()">${esc(payerName(p))} Paid</button>
+    <button class="input-confirm" style="width:100%;padding:14px" onclick="confirmProjectPay()">${esc(payerLabel(p))} Paid</button>
   </div>`;
   document.getElementById('projPayAmt').focus();
 }
