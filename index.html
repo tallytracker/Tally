@@ -1539,8 +1539,20 @@ function openNewGroup(){
 function saveNewGroup(){const name=document.getElementById('newGroupName').value.trim();if(!name){showToast('Please enter a name');return}groups.push({id:genId(),name});save();closeOverlay();renderHome();showToast('Category created')}
 function editGroup(gid){
   const g=getGroup(gid);if(!g)return;
-  document.getElementById('overlay').innerHTML=`<div class="overlay" onclick="closeOverlay(event)"><div class="dialog" onclick="event.stopPropagation()"><p class="dialog-title">Edit Category</p><input class="dialog-input" id="editGroupName" value="${esc(g.name)}"><div class="dialog-actions-col"><button class="dialog-btn-save" onclick="saveEditGroup('${gid}')">Save</button><button class="dialog-btn-delete" onclick="deleteGroup('${gid}')">Delete Category</button><button class="dialog-btn-cancel" onclick="closeOverlay()">Cancel</button></div></div></div>`;
+  const idx=groups.findIndex(x=>x.id===gid);
+  const upBtn=idx>0?`<button class="dialog-btn-save" style="background:var(--card);color:var(--text);border:1.5px solid var(--border)" onclick="moveGroup('${gid}',-1)">↑ Move Up</button>`:'';
+  const downBtn=idx<groups.length-1?`<button class="dialog-btn-save" style="background:var(--card);color:var(--text);border:1.5px solid var(--border)" onclick="moveGroup('${gid}',1)">↓ Move Down</button>`:'';
+  document.getElementById('overlay').innerHTML=`<div class="overlay" onclick="closeOverlay(event)"><div class="dialog" onclick="event.stopPropagation()"><p class="dialog-title">Edit Category</p><input class="dialog-input" id="editGroupName" value="${esc(g.name)}"><div class="dialog-actions-col"><button class="dialog-btn-save" onclick="saveEditGroup('${gid}')">Save</button>${upBtn}${downBtn}<button class="dialog-btn-delete" onclick="deleteGroup('${gid}')">Delete Category</button><button class="dialog-btn-cancel" onclick="closeOverlay()">Cancel</button></div></div></div>`;
   setTimeout(()=>{const i=document.getElementById('editGroupName');if(i){i.focus();i.select()}},100);
+}
+function moveGroup(gid,dir){
+  const idx=groups.findIndex(x=>x.id===gid);
+  if(idx<0)return;
+  const newIdx=idx+dir;
+  if(newIdx<0||newIdx>=groups.length)return;
+  [groups[idx],groups[newIdx]]=[groups[newIdx],groups[idx]];
+  save();closeOverlay();renderHome();
+  editGroup(gid);
 }
 function saveEditGroup(gid){const g=getGroup(gid);if(!g)return;const name=document.getElementById('editGroupName').value.trim();if(!name){showToast('Please enter a name');return}g.name=name;save();closeOverlay();renderHome();showToast('Category renamed')}
 function deleteGroup(gid){projects.forEach(p=>{if(p.groupId===gid)p.groupId=null});groups=groups.filter(g=>g.id!==gid);delete collapsedGroups[gid];db.saveCollapsedGroups();save();closeOverlay();renderHome();showToast('Category deleted')}
@@ -2565,11 +2577,11 @@ function renderProjectDetail(){
   // Action buttons
   let actionsHtml='';
   if(isGroup){
-    actionsHtml+='<div class="detail-actions" style="margin-top:16px">';
-    actionsHtml+='<button class="detail-btn btn-add-session" onclick="showProjectExpenseInput()"><span class="btn-icon">＋</span> Add Expense</button>';
-    actionsHtml+='<button class="detail-btn" style="border:1.5px solid var(--border);background:var(--card);color:var(--text)" onclick="showProjectGroupPaymentInput()"><span class="btn-icon">↔</span> Record Payment</button>';
+    actionsHtml+='<div style="margin-top:16px"><button class="detail-btn btn-add-session" style="width:100%;padding:16px;font-size:15px" onclick="showProjectExpenseInput()"><span class="btn-icon">＋</span> Add Expense</button></div>';
+    actionsHtml+='<div class="detail-actions" style="margin-top:8px">';
+    actionsHtml+='<button class="detail-btn" style="border:1.5px solid var(--border);background:var(--card);color:var(--text)" onclick="showProjectGroupPaymentInput()"><span class="btn-icon">↔</span> Settle Debt</button>';
+    actionsHtml+='<button class="detail-btn btn-add-payment" onclick="showProjectSettleConfirm()"><span class="btn-icon">✓</span> Settle All</button>';
     actionsHtml+='</div>';
-    actionsHtml+='<div style="margin-top:8px"><button class="detail-btn btn-add-payment" style="width:100%" onclick="showProjectSettleConfirm()"><span class="btn-icon">✓</span> Settle & Reset</button></div>';
   }else if(pay){
     actionsHtml+='<div class="detail-actions" style="margin-top:16px">';
     actionsHtml+='<button class="detail-btn btn-add-payment" style="width:100%" onclick="showProjectPayInput()"><span class="btn-icon">$</span> '+esc(payerLabel(p))+' Paid '+esc(receiverLabel(p))+'</button>';
@@ -2653,8 +2665,12 @@ function showProjectExpenseInput(){
   const parts=isGroup?p.participants:[];
   projSplitMode='equal';
 
-  const paidByOpts=isGroup?`<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:6px">Who paid for this?</p><div class="input-row"><select class="form-select" id="projExpPaidBy" style="flex:1">${parts.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('')}</select></div>`:'';
-  const catPicker=buildCategoryPicker(p,'projExpCat');
+  const paidByOpts=isGroup?`<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:6px">Who paid?</p><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${parts.map((n,i)=>`<button type="button" class="proj-paidby-btn" data-name="${esc(n)}" onclick="selectPaidBy(this)" style="padding:8px 16px;border-radius:20px;border:1.5px solid var(--border);background:${i===0?'var(--accent)':'var(--card)'};color:${i===0?'#fff':'var(--text)'};font-size:13px;font-weight:600;cursor:pointer">${esc(n)}</button>`).join('')}</div><input type="hidden" id="projExpPaidBy" value="${esc(parts[0]||'')}">`:'';
+  window.selectPaidBy=function(btn){
+    document.querySelectorAll('.proj-paidby-btn').forEach(b=>{b.style.background='var(--card)';b.style.color='var(--text)'});
+    btn.style.background='var(--accent)';btn.style.color='#fff';
+    document.getElementById('projExpPaidBy').value=btn.dataset.name;
+  };  const catPicker=buildCategoryPicker(p,'projExpCat');
 
   let splitHtml='';
   if(isGroup){
@@ -2898,7 +2914,7 @@ function showProjectGroupPaymentInput(){
   const fromOpts=parts.map((n,i)=>`<option value="${esc(n)}"${i===0?' selected':''}>${esc(n)}</option>`).join('');
   const toOpts=parts.map((n,i)=>`<option value="${esc(n)}"${i===1?' selected':''}>${esc(n)}</option>`).join('');
   el.innerHTML=`<div style="animation:slideDown .25s ease;margin-bottom:16px">
-    <p style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">Record a payment between members</p>
+    <p style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">Record a debt settlement between members</p>
     <div class="input-row" style="gap:6px;align-items:center"><select class="form-select" id="projGpFrom" style="flex:1">${fromOpts}</select><span style="font-size:13px;color:var(--text-muted);font-weight:600;padding:0 2px">paid</span><select class="form-select" id="projGpTo" style="flex:1">${toOpts}</select></div>
     <div class="input-row"><input class="input-field" type="number" inputmode="decimal" placeholder="Amount…" id="projGpAmt" autofocus></div>
     <div class="input-row"><input class="input-field" type="text" placeholder="Note (optional)" id="projGpNote" style="font-size:14px"><button class="input-confirm" onclick="confirmProjectGroupPayment()">Add</button></div>
