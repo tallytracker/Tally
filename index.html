@@ -283,6 +283,12 @@ summary::-webkit-details-marker{display:none}summary::marker{display:none}
 </head>
 <body>
 
+<div id="appLoader" style="position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999">
+  <svg width="64" height="64" viewBox="0 0 48 48" style="margin-bottom:16px"><rect width="48" height="48" rx="11" fill="#e67e22"/><g transform="translate(7.5,8)"><rect x="0" y="0" width="28" height="7" rx="1.5" fill="#ffffff"/><rect x="10" y="0" width="8" height="32" rx="1.5" fill="#ffffff"/><rect x="20" y="10" width="13" height="6" rx="1.3" fill="#ffffff" opacity="0.95"/><rect x="20" y="18" width="10" height="6" rx="1.3" fill="#ffffff" opacity="0.7"/><rect x="20" y="26" width="7" height="6" rx="1.3" fill="#ffffff" opacity="0.45"/></g></svg>
+  <div style="font-family:'Sora',sans-serif;font-size:28px;color:#2c2418;margin-bottom:6px">Tally</div>
+  <div style="font-size:12px;color:#9e9486;letter-spacing:1px">Loading…</div>
+</div>
+
 <div class="toast" id="toast"></div>
 <div id="overlay"></div>
 
@@ -1271,6 +1277,26 @@ function formatDuration(input){
   return h+'hr'+(h!==1?'s':'')+' '+m+'min';
 }
 function rd2(n){return Math.round(n*100)/100}
+function fmtN(n){const num=typeof n==='string'?parseFloat(n):n;if(isNaN(num))return'0';const abs=Math.abs(num);if(abs===Math.floor(abs))return abs>=1000?Math.floor(abs).toLocaleString('en-US'):String(Math.floor(abs));return abs>=1000?abs.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2}):String(rd2(abs))}
+
+// Parse total minutes from a history entry. Uses durationMins if stored,
+// otherwise falls back to parsing the note text (e.g. "2hrs 14min @ $60").
+function entryMins(h){
+  if(h.durationMins)return h.durationMins;
+  if(!h.note)return 0;
+  const n=h.note;
+  let mins=0;
+  const hrMatch=n.match(/(\d+)\s*hrs?\b/i);
+  const minMatch=n.match(/(\d+)\s*min/i);
+  if(hrMatch)mins+=parseInt(hrMatch[1])*60;
+  if(minMatch)mins+=parseInt(minMatch[1]);
+  return mins;
+}
+// Sum actual logged minutes from charge entries in current cycle
+function sumActualMins(p){
+  const hist=getEntriesSinceLastSettlement(p);
+  return hist.filter(h=>h.type==='charge').reduce((s,h)=>s+entryMins(h),0);
+}
 
 // Convert legacy time labels like "0.79hrs", "1.5 hr", "2.0hrs" inside a note
 // to readable "Xhr Ymin". Only fractional/decimal forms are touched — clean
@@ -1312,8 +1338,6 @@ function otherName(p){
 }
 function payerName(p){return isPay(p)?myName():otherName(p)}
 function receiverName(p){return isPay(p)?otherName(p):myName()}
-function payerLabel(p){return isPay(p)?'I':otherName(p)}
-function receiverLabel(p){return isPay(p)?otherName(p):'I'}
 function balLabel(p){
   const bal=p.balance||0;
   if(p.type==='project'){return bal===0?'No expenses':'Total Spent'}
@@ -1493,7 +1517,7 @@ function renderProjects(){
       const totalSigned=gp.reduce((s,p)=>s+userSignedValue(p),0);
       const abs=Math.round(Math.abs(totalSigned));
       const cls=totalSigned>0?'credit':totalSigned<0?'owe':'zero';
-      totalHtml=`<span class="group-total ${cls}">${currencies[0]}${abs}</span>`;
+      totalHtml=`<span class="group-total ${cls}">${currencies[0]}${fmtN(abs)}</span>`;
     }
     html+=`<div class="group-section"><div class="group-header" onclick="toggleGroup('${g.id}')"><div class="group-header-left"><span class="group-chevron ${collapsed?'':'open'}">›</span><span class="group-name">${esc(g.name)}</span><span class="group-count">(${gp.length})</span></div><div style="display:flex;align-items:center;gap:8px">${totalHtml}<button class="group-edit-btn" onclick="event.stopPropagation();editGroup('${g.id}')">⋯</button></div></div><div class="group-items" style="${collapsed?'max-height:0;overflow:hidden':''}">${gp.map(p=>renderProjectCard(p)).join('')}</div></div>`;
   });
@@ -1526,7 +1550,7 @@ function renderProjectCard(p){
   const dir='';
   const ht=!!timers[p.id],tb=ht?'<div class="project-timer-badge"><span class="pulse-dot"></span>Timer running</div>':'';
   const dirLabel='';
-  return`<div class="project-card ${ht?'has-timer':''}" onclick="openProject('${p.id}')"><div class="project-info"><div class="project-name">${dir}${esc(p.name)}</div><div class="project-meta">${typePrefix}${tl}${dirLabel}</div>${tb}</div><span class="project-balance ${cls}">${cur(p)}${displayAmt}</span><span class="project-arrow">›</span></div>`;
+  return`<div class="project-card ${ht?'has-timer':''}" onclick="openProject('${p.id}')"><div class="project-info"><div class="project-name">${dir}${esc(p.name)}</div><div class="project-meta">${typePrefix}${tl}${dirLabel}</div>${tb}</div><span class="project-balance ${cls}">${cur(p)}${fmtN(displayAmt)}</span><span class="project-arrow">›</span></div>`;
 }
 
 function toggleGroup(gid){collapsedGroups[gid]=!collapsedGroups[gid];db.saveCollapsedGroups();renderProjects()}
@@ -1539,20 +1563,8 @@ function openNewGroup(){
 function saveNewGroup(){const name=document.getElementById('newGroupName').value.trim();if(!name){showToast('Please enter a name');return}groups.push({id:genId(),name});save();closeOverlay();renderHome();showToast('Category created')}
 function editGroup(gid){
   const g=getGroup(gid);if(!g)return;
-  const idx=groups.findIndex(x=>x.id===gid);
-  const upBtn=idx>0?`<button class="dialog-btn-save" style="background:var(--card);color:var(--text);border:1.5px solid var(--border)" onclick="moveGroup('${gid}',-1)">↑ Move Up</button>`:'';
-  const downBtn=idx<groups.length-1?`<button class="dialog-btn-save" style="background:var(--card);color:var(--text);border:1.5px solid var(--border)" onclick="moveGroup('${gid}',1)">↓ Move Down</button>`:'';
-  document.getElementById('overlay').innerHTML=`<div class="overlay" onclick="closeOverlay(event)"><div class="dialog" onclick="event.stopPropagation()"><p class="dialog-title">Edit Category</p><input class="dialog-input" id="editGroupName" value="${esc(g.name)}"><div class="dialog-actions-col"><button class="dialog-btn-save" onclick="saveEditGroup('${gid}')">Save</button>${upBtn}${downBtn}<button class="dialog-btn-delete" onclick="deleteGroup('${gid}')">Delete Category</button><button class="dialog-btn-cancel" onclick="closeOverlay()">Cancel</button></div></div></div>`;
+  document.getElementById('overlay').innerHTML=`<div class="overlay" onclick="closeOverlay(event)"><div class="dialog" onclick="event.stopPropagation()"><p class="dialog-title">Edit Category</p><input class="dialog-input" id="editGroupName" value="${esc(g.name)}"><div class="dialog-actions-col"><button class="dialog-btn-save" onclick="saveEditGroup('${gid}')">Save</button><button class="dialog-btn-delete" onclick="deleteGroup('${gid}')">Delete Category</button><button class="dialog-btn-cancel" onclick="closeOverlay()">Cancel</button></div></div></div>`;
   setTimeout(()=>{const i=document.getElementById('editGroupName');if(i){i.focus();i.select()}},100);
-}
-function moveGroup(gid,dir){
-  const idx=groups.findIndex(x=>x.id===gid);
-  if(idx<0)return;
-  const newIdx=idx+dir;
-  if(newIdx<0||newIdx>=groups.length)return;
-  [groups[idx],groups[newIdx]]=[groups[newIdx],groups[idx]];
-  save();closeOverlay();renderHome();
-  editGroup(gid);
 }
 function saveEditGroup(gid){const g=getGroup(gid);if(!g)return;const name=document.getElementById('editGroupName').value.trim();if(!name){showToast('Please enter a name');return}g.name=name;save();closeOverlay();renderHome();showToast('Category renamed')}
 function deleteGroup(gid){projects.forEach(p=>{if(p.groupId===gid)p.groupId=null});groups=groups.filter(g=>g.id!==gid);delete collapsedGroups[gid];db.saveCollapsedGroups();save();closeOverlay();renderHome();showToast('Category deleted')}
@@ -2047,17 +2059,17 @@ function renderDetail(){
   document.getElementById('detailType').innerHTML=gName+tl+ds+' '+dirBadge;
 
   syncBalance(p);
-  const bal=p.balance||0,abs=Math.round(Math.abs(bal));
+  const bal=p.balance||0,abs=rd2(Math.abs(bal));
   const lbl=document.getElementById('dBalLabel'),amt=document.getElementById('dBalAmt');
   lbl.textContent=balLabel(p);
-  amt.textContent=cur(p)+abs;
+  amt.textContent=cur(p)+fmtN(abs);
   amt.className='balance-amount '+balColorClass(p);
 
   // Units text: shows how many sessions/hours the BALANCE represents
+  // For hourly/custom-rate: sum actual logged time from history entries
+  // For sessions/days: derive from balance ÷ rate (always accurate since rate is fixed per session)
   // bal > 0 = unpaid → "That's X sessions"
   // bal < 0 = paid in advance → "Covers X sessions"
-  // For sessions/days: round to whole number, add "+" if remainder
-  // For hours: show as "X hrs Y min"
   let unitsText='';
   const absBal=Math.abs(bal);
   if(absBal>0){
@@ -2068,35 +2080,27 @@ function renderDetail(){
     }else if(p.type==='daily'&&p.rate>0){
       const exact=absBal/p.rate;const whole=Math.floor(exact);const hasRem=exact>whole;
       if(whole>0)unitsText=prefix+whole+(hasRem?'+ ':' ')+'day'+(whole!==1||hasRem?'s':'');
-    }else if(p.type==='hourly'&&p.rate>0){
-      const totalMin=Math.round(absBal/p.rate*60);
-      const h=Math.floor(totalMin/60);const m=totalMin%60;
-      let dur='';
-      if(h>0&&m>0)dur=h+' hr'+(h!==1?'s':'')+' '+m+' min';
-      else if(h>0)dur=h+' hr'+(h!==1?'s':'');
-      else if(m>0)dur=m+' min';
-      if(dur)unitsText=prefix+dur;
-    }else if(p.type==='customrate'&&p.customRateAmt>0){
-      const totalCustom=absBal/p.customRateAmt*p.customRateMin;
-      if(p.customRateUnit==='hr'){
-        const totalMin=Math.round(totalCustom*60);
-        const h=Math.floor(totalMin/60);const m=totalMin%60;
+    }else if(p.type==='hourly'||((p.type==='customrate')&&(p.customRateUnit||'min')==='hr')){
+      const actualMins=sumActualMins(p);
+      if(actualMins>0){
+        const h=Math.floor(actualMins/60);const m=actualMins%60;
         let dur='';
         if(h>0&&m>0)dur=h+' hr'+(h!==1?'s':'')+' '+m+' min';
         else if(h>0)dur=h+' hr'+(h!==1?'s':'');
         else if(m>0)dur=m+' min';
         if(dur)unitsText=prefix+dur;
-      }else{
-        const whole=Math.floor(totalCustom);const hasRem=totalCustom>whole;
-        if(whole>0)unitsText=prefix+whole+(hasRem?'+ ':' ')+'min'+(whole!==1||hasRem?'s':'');
       }
+    }else if(p.type==='customrate'&&p.customRateAmt>0){
+      const totalCustom=absBal/p.customRateAmt*p.customRateMin;
+      const whole=Math.floor(totalCustom);const hasRem=totalCustom>whole;
+      if(whole>0)unitsText=prefix+whole+(hasRem?'+ ':' ')+'min'+(whole!==1||hasRem?'s':'');
     }
   }
   document.getElementById('dBalUnits').textContent=unitsText;
 
   document.getElementById('dAddLabel').textContent=p.type==='project'?'Add Expense':'Add Session';
-  // Payment button label = viewer-aware: "I Paid" when you're the payer, else "Liam Paid".
-  document.getElementById('dPayLabel').textContent=payerLabel(p)+' Paid';
+  // Payment button label = name of the PAYER, derived from payerName().
+  document.getElementById('dPayLabel').textContent=payerName(p)+' Paid';
   document.getElementById('chargeInput').innerHTML='';
   document.getElementById('payInput').innerHTML='';
 
@@ -2121,7 +2125,7 @@ function renderDetail(){
       else if(h.type==='payment'){dc=pay?'dot-payment':'dot-payment-earn';ac=pay?'amt-payment':'amt-payment-earn'}
       else{dc='dot-skipped';ac='amt-skipped'}
     }
-    const at=h.type==='charge'?'+'+cur(p)+rd2(h.amount):h.type==='payment'?'-'+cur(p)+rd2(h.amount):'—';
+    const at=h.type==='charge'?'+'+cur(p)+fmtN(h.amount):h.type==='payment'?'-'+cur(p)+fmtN(h.amount):'—';
     const commentHtml=h.comment?`<span style="display:block;font-size:12px;color:var(--text-mid);margin-top:2px;font-style:italic">${esc(h.comment)}</span>`:'';
     return`<div class="history-row" onclick="showEntryActions('${h.id}')" style="cursor:pointer"><div class="row-left"><span class="row-dot ${dc}"></span><div><span class="row-note">${esc(normalizeNote(h.note||''))}</span><span class="row-date">${formatDate(h.date)}</span>${commentHtml}</div></div><span class="row-amt ${ac}">${at}</span></div>`;
   }).join('')}
@@ -2169,7 +2173,7 @@ function endTimer(){
   if(p.type==='hourly')noteText=dur+' @ '+cur(p)+p.rate+' (timed)';
   else if(unit==='hr')noteText=dur+' @ '+cur(p)+p.customRateAmt+'/'+p.customRateMin+'hr (timed)';
   else noteText=dur+' @ '+cur(p)+p.customRateAmt+'/'+p.customRateMin+'min (timed)';
-  const entry={id:genId(),type:'charge',amount,date:new Date().toISOString(),note:noteText};
+  const entry={id:genId(),type:'charge',amount,date:new Date().toISOString(),note:noteText,durationMins:Math.round(elapsed/(1000*60))};
   // Append-only safety log — write BEFORE addEntry so the session survives
   // even if save/sync fails or a stale snapshot clobbers in-memory state.
   // This log lives in the LOCAL layer and is never read by the sync code.
@@ -2378,6 +2382,7 @@ function confirmCharge(){
     const mins=parseFloat(document.getElementById('chargeMins').value)||0;
     if(hrs<=0&&mins<=0)return;
     const totalHrs=hrs+mins/60;
+    const durationMins=Math.round(hrs*60+mins);
     if(isHourly){
       amount=rd2(totalHrs*p.rate);
     }else{
@@ -2386,6 +2391,9 @@ function confirmCharge(){
     // Build natural note text based on what was entered
     const rate=isHourly?cur(p)+p.rate:cur(p)+p.customRateAmt+'/'+p.customRateMin+'hr';
     noteText=formatDuration({hrs,mins})+' @ '+rate;
+    addEntry(p,{type:'charge',amount,date:new Date().toISOString(),note:noteText,durationMins});
+    chargeOpen=false;renderDetail();showToast('+'+cur(p)+amount+' added');
+    return;
   }
   else if(p.type==='customrate'){const unit=p.customRateUnit||'min';const val=parseFloat(document.getElementById('chargeVal').value);if(!val||val<=0)return;amount=rd2((val/p.customRateMin)*p.customRateAmt);noteText=val+'min @ '+cur(p)+p.customRateAmt+'/'+p.customRateMin+'min'}
   else{const val=parseFloat(document.getElementById('chargeVal').value);if(!val||val<=0)return;amount=rd2(val);noteText='Expense'}
@@ -2458,29 +2466,29 @@ function renderProjectDetail(){
     const pct=Math.min(100,Math.round((spent/budget)*100));
     const overBudget=remaining<0;
     const barColor=overBudget?'var(--red)':'var(--green)';
-    html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Budget</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${budget}</span></div>`;
+    html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Budget</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${fmtN(budget)}</span></div>`;
     html+=`<div style="display:flex;justify-content:space-between;margin-bottom:6px">`;
-    html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--text)">${c}${spent}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Spent</div></div>`;
-    html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:${overBudget?'var(--red)':'var(--accent)'}">${c}${rd2(Math.abs(remaining))}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">${overBudget?'Over Budget':'Remaining'}</div></div>`;
+    html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--text)">${c}${fmtN(spent)}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Spent</div></div>`;
+    html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:${overBudget?'var(--red)':'var(--accent)'}">${c}${fmtN(Math.abs(remaining))}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">${overBudget?'Over Budget':'Remaining'}</div></div>`;
     if(!pay&&!isGroup&&totalIn>0){
-      html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--green)">${c}${totalIn}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Received</div></div>`;
+      html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--green)">${c}${fmtN(totalIn)}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Received</div></div>`;
     }
     html+=`</div>`;
     html+=`<div style="background:var(--border);border-radius:6px;height:8px;margin-bottom:4px;overflow:hidden"><div style="background:${barColor};height:100%;width:${pct}%;border-radius:6px;transition:width .4s ease"></div></div>`;
     html+=`<div style="text-align:right;margin-bottom:14px"><span style="font-size:12px;font-weight:700;color:${overBudget?'var(--red)':'var(--text-muted)'}">${pct}%</span></div>`;
   }else{
     if(pay&&!isGroup){
-      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Total Spent</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${totalOut}</span></div>`;
+      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Total Spent</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${fmtN(totalOut)}</span></div>`;
     }else if(!pay&&!isGroup){
-      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Total Expenses</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${totalOut}</span></div>`;
+      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Total Expenses</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${fmtN(totalOut)}</span></div>`;
       if(totalIn>0){
         html+=`<div style="display:flex;justify-content:space-between;margin-bottom:16px">`;
-        html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--green)">${c}${totalIn}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Received</div></div>`;
-        html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:${totalOut-totalIn>0?'var(--red)':'var(--green)'}">${c}${rd2(Math.abs(totalOut-totalIn))}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">${totalOut-totalIn>0?'Outstanding':'Profit'}</div></div>`;
+        html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:var(--green)">${c}${fmtN(totalIn)}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Received</div></div>`;
+        html+=`<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:800;color:${totalOut-totalIn>0?'var(--red)':'var(--green)'}">${c}${fmtN(Math.abs(totalOut-totalIn))}</div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px">${totalOut-totalIn>0?'Outstanding':'Profit'}</div></div>`;
         html+=`</div>`;
       }
     }else{
-      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Total Expenses</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${totalOut}</span><span style="font-size:12px;color:var(--text-muted);margin-top:6px">${p.participants.length} people</span></div>`;
+      html+=`<div class="balance-card" style="margin-top:0;margin-bottom:8px;padding:24px 20px"><span class="balance-label">Total Expenses</span><span class="balance-amount" style="color:var(--text);font-size:42px">${c}${fmtN(totalOut)}</span><span style="font-size:12px;color:var(--text-muted);margin-top:6px">${p.participants.length} people</span></div>`;
     }
   }
   html+=`<div style="text-align:center;margin-bottom:14px"><button onclick="showEditBudget()" style="background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer">${budget?'Edit Budget':'Set Budget'}</button></div>`;
@@ -2528,7 +2536,7 @@ function renderProjectDetail(){
             <span style="font-size:16px;color:var(--text-light);flex-shrink:0">→</span>
             <span style="font-size:14px;font-weight:700;color:var(--green);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.to)}</span>
           </div>
-          <span style="font-size:16px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;margin-left:12px;flex-shrink:0">${c}${rd2(t.amount)}</span>
+          <span style="font-size:16px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;margin-left:12px;flex-shrink:0">${c}${fmtN(t.amount)}</span>
         </div>`;
       });
     }
@@ -2540,17 +2548,17 @@ function renderProjectDetail(){
       const paidAmt=rd2(paid[n]);
       const shareAmt=rd2(owes[n]);
       let statusText,statusColor;
-      if(bal<-0.01){statusText='Remaining to pay: '+c+rd2(Math.abs(bal));statusColor='var(--red)'}
-      else if(bal>0.01){statusText='Remaining to receive: '+c+rd2(bal);statusColor='var(--green)'}
+      if(bal<-0.01){statusText='Remaining to pay: '+c+fmtN(Math.abs(bal));statusColor='var(--red)'}
+      else if(bal>0.01){statusText='Remaining to receive: '+c+fmtN(bal);statusColor='var(--green)'}
       else{statusText='All settled';statusColor='var(--text-light)'}
       settlementHtml+=`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:6px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <span style="font-size:14px;font-weight:700;color:var(--text)">${esc(n)}</span>
-          <span style="font-size:14px;font-weight:800;color:${statusColor};font-variant-numeric:tabular-nums">${bal<-0.01?c+rd2(Math.abs(bal)):bal>0.01?c+rd2(bal):''}</span>
+          <span style="font-size:14px;font-weight:800;color:${statusColor};font-variant-numeric:tabular-nums">${bal<-0.01?c+fmtN(Math.abs(bal)):bal>0.01?c+fmtN(bal):''}</span>
         </div>
         <div style="display:flex;gap:16px;font-size:12px;color:var(--text-muted)">
-          <span>Total to pay: <strong style="color:var(--text)">${c}${shareAmt}</strong></span>
-          <span>Paid: <strong style="color:var(--text)">${c}${paidAmt}</strong></span>
+          <span>Total to pay: <strong style="color:var(--text)">${c}${fmtN(shareAmt)}</strong></span>
+          <span>Paid: <strong style="color:var(--text)">${c}${fmtN(paidAmt)}</strong></span>
         </div>
         <div style="font-size:12px;font-weight:600;color:${statusColor};margin-top:4px">${statusText}</div>
       </div>`;
@@ -2568,7 +2576,7 @@ function renderProjectDetail(){
     categories.forEach((cat,i)=>{
       const color=getCatColor(i);
       const pctOfTotal=totalOut>0?Math.round((cat.total/totalOut)*100):0;
-      catHtml+=`<div class="cat-row"><div class="cat-color" style="background:${color}"></div><div class="cat-info"><div class="cat-name">${esc(cat.name)}</div><div class="cat-bar-track"><div class="cat-bar-fill" style="width:${pctOfTotal}%;background:${color}"></div></div></div><div style="text-align:right"><div class="cat-amt">${c}${cat.total}</div><div class="cat-pct">${pctOfTotal}% · ${cat.count} item${cat.count!==1?'s':''}</div></div></div>`;
+      catHtml+=`<div class="cat-row"><div class="cat-color" style="background:${color}"></div><div class="cat-info"><div class="cat-name">${esc(cat.name)}</div><div class="cat-bar-track"><div class="cat-bar-fill" style="width:${pctOfTotal}%;background:${color}"></div></div></div><div style="text-align:right"><div class="cat-amt">${c}${fmtN(cat.total)}</div><div class="cat-pct">${pctOfTotal}% · ${cat.count} item${cat.count!==1?'s':''}</div></div></div>`;
     });
     catHtml+='</div>';
   }
@@ -2577,19 +2585,19 @@ function renderProjectDetail(){
   // Action buttons
   let actionsHtml='';
   if(isGroup){
-    actionsHtml+='<div style="margin-top:16px"><button class="detail-btn btn-add-payment" style="width:100%;padding:16px;font-size:15px" onclick="showProjectExpenseInput()"><span class="btn-icon">＋</span> Add Expense</button></div>';
-    actionsHtml+='<div class="detail-actions" style="margin-top:8px">';
-    actionsHtml+='<button class="detail-btn" style="border:1.5px solid var(--border);background:var(--card);color:var(--text)" onclick="showProjectGroupPaymentInput()"><span class="btn-icon">↔</span> Settle Debt</button>';
-    actionsHtml+='<button class="detail-btn" style="border:1.5px solid var(--border);background:var(--card);color:var(--text)" onclick="showProjectSettleConfirm()"><span class="btn-icon">✓</span> Settle All</button>';
+    actionsHtml+='<div class="detail-actions" style="margin-top:16px">';
+    actionsHtml+='<button class="detail-btn btn-add-session" onclick="showProjectExpenseInput()"><span class="btn-icon">＋</span> Add Expense</button>';
+    actionsHtml+='<button class="detail-btn" style="border:1.5px solid var(--border);background:var(--card);color:var(--text)" onclick="showProjectGroupPaymentInput()"><span class="btn-icon">↔</span> Record Payment</button>';
     actionsHtml+='</div>';
+    actionsHtml+='<div style="margin-top:8px"><button class="detail-btn btn-add-payment" style="width:100%" onclick="showProjectSettleConfirm()"><span class="btn-icon">✓</span> Settle & Reset</button></div>';
   }else if(pay){
     actionsHtml+='<div class="detail-actions" style="margin-top:16px">';
-    actionsHtml+='<button class="detail-btn btn-add-payment" style="width:100%" onclick="showProjectPayInput()"><span class="btn-icon">$</span> '+esc(payerLabel(p))+' Paid '+esc(receiverLabel(p))+'</button>';
+    actionsHtml+='<button class="detail-btn btn-add-payment" style="width:100%" onclick="showProjectPayInput()"><span class="btn-icon">$</span> '+esc(payerName(p))+' Paid '+esc(receiverName(p))+'</button>';
     actionsHtml+='</div>';
   }else{
     actionsHtml+='<div class="detail-actions" style="margin-top:16px">';
     actionsHtml+='<button class="detail-btn btn-add-session" onclick="showProjectExpenseInput()"><span class="btn-icon">＋</span> Add Expense</button>';
-    actionsHtml+='<button class="detail-btn btn-add-payment" onclick="showProjectPayInput()"><span class="btn-icon">$</span> '+esc(payerLabel(p))+' Paid</button>';
+    actionsHtml+='<button class="detail-btn btn-add-payment" onclick="showProjectPayInput()"><span class="btn-icon">$</span> '+esc(payerName(p))+' Paid</button>';
     actionsHtml+='</div>';
   }
   document.getElementById('projActions').innerHTML=actionsHtml;
@@ -2606,7 +2614,7 @@ function renderProjectDetail(){
       const isCharge=h.type==='charge';
       const dc=isCharge?'dot-charge':'dot-payment';
       const ac=isCharge?'amt-charge':'amt-payment';
-      const at=isCharge?'+'+c+rd2(h.amount):'-'+c+rd2(h.amount);
+      const at=isCharge?'+'+c+fmtN(h.amount):'-'+c+fmtN(h.amount);
       const catTag=h.costItem?` · ${esc(h.costItem)}`:'';
       const paidByTag=h.paidBy?` · paid by ${esc(h.paidBy)}`:'';
       const splitInfo=h.customSplit?'Custom split':h.splitAmong&&h.splitAmong.length<(p.participants||[]).length?h.splitAmong.length+' people':'';
@@ -2641,8 +2649,8 @@ function saveBudgetEdit(){
 
 function buildCategoryPicker(p, elId){
   const used=getUsedCategories(p);
-  if(!used.length)return`<div><input class="input-field" type="text" placeholder="Category (e.g. Flights, Food)" id="${elId}" style="font-size:14px;width:100%"></div>`;
-  return`<div><select class="form-select" id="${elId}" style="width:100%" onchange="if(this.value==='__new__'){this.style.display='none';document.getElementById('${elId}New').style.display='';document.getElementById('${elId}New').focus()}"><option value="">Category</option>${used.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}<option value="__new__">＋ New…</option></select><input class="input-field" type="text" placeholder="New category…" id="${elId}New" style="font-size:14px;width:100%;display:none;margin-top:6px"></div>`;
+  if(!used.length)return`<div style="margin-bottom:8px"><input class="input-field" type="text" placeholder="Category (e.g. Flights, Food; Woodwork, Lighting)" id="${elId}" style="font-size:14px;width:100%"></div>`;
+  return`<div style="margin-bottom:8px"><select class="form-select" id="${elId}" onchange="if(this.value==='__new__'){this.style.display='none';document.getElementById('${elId}New').style.display='';document.getElementById('${elId}New').focus()}"><option value="">No category</option>${used.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}<option value="__new__">＋ New category…</option></select><input class="input-field" type="text" placeholder="New category name…" id="${elId}New" style="font-size:14px;width:100%;display:none;margin-top:6px"></div>`;
 }
 function getCategoryValue(elId){
   const sel=document.getElementById(elId);
@@ -2665,12 +2673,8 @@ function showProjectExpenseInput(){
   const parts=isGroup?p.participants:[];
   projSplitMode='equal';
 
-  const paidByOpts=isGroup?`<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:6px">Who paid?</p><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${parts.map((n,i)=>`<button type="button" class="proj-paidby-btn" data-name="${esc(n)}" onclick="selectPaidBy(this)" style="padding:8px 16px;border-radius:20px;border:1.5px solid var(--border);background:${i===0?'var(--accent)':'var(--card)'};color:${i===0?'#fff':'var(--text)'};font-size:13px;font-weight:600;cursor:pointer">${esc(n)}</button>`).join('')}</div><input type="hidden" id="projExpPaidBy" value="${esc(parts[0]||'')}">`:'';
-  window.selectPaidBy=function(btn){
-    document.querySelectorAll('.proj-paidby-btn').forEach(b=>{b.style.background='var(--card)';b.style.color='var(--text)'});
-    btn.style.background='var(--accent)';btn.style.color='#fff';
-    document.getElementById('projExpPaidBy').value=btn.dataset.name;
-  };  const catPicker=buildCategoryPicker(p,'projExpCat');
+  const paidByOpts=isGroup?`<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:6px">Who paid for this?</p><div class="input-row"><select class="form-select" id="projExpPaidBy" style="flex:1">${parts.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('')}</select></div>`:'';
+  const catPicker=buildCategoryPicker(p,'projExpCat');
 
   let splitHtml='';
   if(isGroup){
@@ -2686,7 +2690,10 @@ function showProjectExpenseInput(){
   }
 
   el.innerHTML=`<div style="animation:slideDown .25s ease;margin-bottom:16px">
-    <div style="display:flex;gap:8px;align-items:flex-start"><div style="flex:1"><input class="input-field" type="number" inputmode="decimal" placeholder="Amount…" id="projExpAmt" autofocus style="width:100%" ${isGroup?'onchange="updateProjSplitPreview()" oninput="updateProjSplitPreview()"':''}></div><div style="flex:1.6">${catPicker}</div></div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <div style="flex:1.2">${catPicker.replace('margin-bottom:8px','margin-bottom:0')}</div>
+      <div style="flex:0.8"><input class="input-field" type="number" inputmode="decimal" placeholder="Amount…" id="projExpAmt" autofocus ${isGroup?'onchange="updateProjSplitPreview()" oninput="updateProjSplitPreview()"':''} style="width:100%"></div>
+    </div>
     <div class="input-row"><input class="input-field" type="text" placeholder="Description (optional)" id="projExpNote" style="font-size:14px"></div>
     ${paidByOpts}
     ${splitHtml}
@@ -2818,7 +2825,7 @@ function showProjectPayInput(){
     <div class="input-row"><input class="input-field" type="number" inputmode="decimal" placeholder="Amount…" id="projPayAmt" autofocus></div>
     ${catPicker}
     <div class="input-row"><input class="input-field" type="text" placeholder="Description (optional)" id="projPayNote" style="font-size:14px"></div>
-    <button class="input-confirm" style="width:100%;padding:14px" onclick="confirmProjectPay()">${esc(payerLabel(p))} Paid</button>
+    <button class="input-confirm" style="width:100%;padding:14px" onclick="confirmProjectPay()">${esc(payerName(p))} Paid</button>
   </div>`;
   document.getElementById('projPayAmt').focus();
 }
@@ -2913,7 +2920,7 @@ function showProjectGroupPaymentInput(){
   const fromOpts=parts.map((n,i)=>`<option value="${esc(n)}"${i===0?' selected':''}>${esc(n)}</option>`).join('');
   const toOpts=parts.map((n,i)=>`<option value="${esc(n)}"${i===1?' selected':''}>${esc(n)}</option>`).join('');
   el.innerHTML=`<div style="animation:slideDown .25s ease;margin-bottom:16px">
-    <p style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">Record a debt settlement between members</p>
+    <p style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">Record a payment between members</p>
     <div class="input-row" style="gap:6px;align-items:center"><select class="form-select" id="projGpFrom" style="flex:1">${fromOpts}</select><span style="font-size:13px;color:var(--text-muted);font-weight:600;padding:0 2px">paid</span><select class="form-select" id="projGpTo" style="flex:1">${toOpts}</select></div>
     <div class="input-row"><input class="input-field" type="number" inputmode="decimal" placeholder="Amount…" id="projGpAmt" autofocus></div>
     <div class="input-row"><input class="input-field" type="text" placeholder="Note (optional)" id="projGpNote" style="font-size:14px"><button class="input-confirm" onclick="confirmProjectGroupPayment()">Add</button></div>
@@ -3205,7 +3212,7 @@ function renderLendingDetail(){
             <span style="font-size:16px;color:var(--text-light);flex-shrink:0">→</span>
             <span style="font-size:14px;font-weight:700;color:var(--green);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.to)}</span>
           </div>
-          <span style="font-size:16px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;margin-left:12px;flex-shrink:0">${c}${rd2(t.amount)}</span>
+          <span style="font-size:16px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;margin-left:12px;flex-shrink:0">${c}${fmtN(t.amount)}</span>
         </div>`;
       });
       html+='</div>';
@@ -3581,6 +3588,7 @@ function startApp(){
   }
   renderAuthCard();
   updateSyncBadge();
+  const loader=document.getElementById('appLoader');if(loader)loader.remove();
 }
 // App is started by auth.onAuthStateChanged — not called directly here
 </script>
@@ -3588,6 +3596,8 @@ function startApp(){
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
+// Fallback: remove loader after 5s even if auth hangs
+setTimeout(()=>{const loader=document.getElementById('appLoader');if(loader)loader.remove()},5000);
 </script>
 </body>
 </html>
