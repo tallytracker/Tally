@@ -670,17 +670,17 @@ summary::-webkit-details-marker{display:none}summary::marker{display:none}
   <div style="margin-top:32px;padding-top:24px;border-top:1.5px solid var(--border)">
     <div class="form-label" style="margin-bottom:12px">Backup &amp; Restore</div>
     <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.5">Save a copy of all your data to a file, or restore from a previous backup.</p>
-    <button class="form-submit" style="background:var(--text);margin-bottom:10px" onclick="doBackupExport()">⬇ Export Backup</button>
+    <button class="form-submit" style="background:var(--text);margin-bottom:10px" onclick="doBackupExport()">Export Backup</button>
     <label class="form-submit" style="background:var(--accent);display:block;text-align:center;cursor:pointer;margin-bottom:0">
-      ⬆ Import Backup
+      Import Backup
       <input type="file" accept=".json,.tally" id="backupFileInput" onchange="handleBackupImport(event)" style="display:none">
     </label>
     <p id="backupInfo" style="font-size:12px;color:var(--text-muted);margin-top:10px;text-align:center"></p>
   </div>
   <div style="margin-top:32px;padding-top:24px;border-top:1.5px solid var(--border)">
     <div class="form-label" style="margin-bottom:12px">Recover Lost Sessions</div>
-    <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.5">If a timed session ever goes missing after sync, recover it here. Tally keeps a private log of every session you end and can restore any that aren't in your history.</p>
-    <button class="form-submit" style="background:var(--text);margin-bottom:0" onclick="openRecoverSessions()">🛟 Check for Lost Sessions</button>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.5">In rare cases — such as two devices making changes at the same time — a timed session may go missing after a sync conflict. Tally keeps a private log of every session you end and can restore any that aren't in your history.</p>
+    <button class="form-submit" style="background:var(--text);margin-bottom:0" onclick="openRecoverSessions()">Check for Lost Sessions</button>
     <p id="recoverInfo" style="font-size:12px;color:var(--text-muted);margin-top:10px;text-align:center"></p>
   </div>
   <div style="margin-top:32px;padding-top:24px;border-top:1.5px solid var(--border);text-align:center">
@@ -1104,20 +1104,32 @@ const db={
   _cacheSettingsLocally(){
     try{localStorage.setItem(SYNCED_KEYS.settings,JSON.stringify(settings))}catch(e){}
   },
+  _pendingRetry:null,
+  _retryCount:0,
   _pushSyncedToFirestore(){
     if(!firebaseAvailable||!currentUser||currentUser.isAnonymous)return;
     const uid=currentUser.uid;
     const stamp=Date.now();
     this.setLocalUpdatedAt(stamp);
+    syncStatus='syncing';updateSyncBadge();
     firestore.collection('users').doc(uid).set({
       projects,groups,settings,
       clientUpdatedAt:stamp,
       updatedAt:firebase.firestore.FieldValue.serverTimestamp()
     },{merge:true}).then(()=>{
       syncStatus='synced';updateSyncBadge();
+      this._retryCount=0;
+      if(this._pendingRetry){clearTimeout(this._pendingRetry);this._pendingRetry=null}
     }).catch(e=>{
       console.error('Firestore write error:',e);
       syncStatus='error';updateSyncBadge();
+      // Retry with exponential backoff, up to 3 attempts
+      if(this._retryCount<3){
+        this._retryCount++;
+        const delay=Math.min(5000*Math.pow(2,this._retryCount-1),30000);
+        if(this._pendingRetry)clearTimeout(this._pendingRetry);
+        this._pendingRetry=setTimeout(()=>{this._pushSyncedToFirestore()},delay);
+      }
     });
   },
   // Apply a Firestore snapshot to the synced layer in memory + offline cache.
@@ -1410,25 +1422,34 @@ function renderBackupBanner(){
   const el=document.getElementById('backupBanner');
   if(!el)return;
   const isAnon=!currentUser||currentUser.isAnonymous;
-  const dismissed=settings.backupNudgeDismissed;
-  // Show the banner only if: anonymous, not previously dismissed, and the user
-  // has logged enough entries to have something worth backing up.
-  if(!isAnon||dismissed||totalEntryCount()<5){el.innerHTML='';return}
+  
+  if(!isAnon||totalEntryCount()<5){el.innerHTML='';return}
+  
+  // Check if dismissed — but only temporarily (reappear after 7 days or 20 new entries)
+  const dismissedAt=settings.backupNudgeDismissedAt||0;
+  const dismissedCount=settings.backupNudgeDismissedCount||0;
+  const now=Date.now();
+  const daysSinceDismiss=dismissedAt?(now-dismissedAt)/(1000*60*60*24):999;
+  const entriesSinceDismiss=totalEntryCount()-(settings.backupNudgeEntryCount||0);
+  
+  if(dismissedAt && daysSinceDismiss<7 && entriesSinceDismiss<20){el.innerHTML='';return}
+  
   el.innerHTML=`<div class="backup-banner">
     <div class="backup-banner-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e67e22" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 1 0 -1.5 -8.74 6 6 0 0 0 -11.5 1.74 4 4 0 0 0 0.5 8h12.5z"/></svg></div>
     <div class="backup-banner-content">
-      <div class="backup-banner-title">Back up your data</div>
-      <div class="backup-banner-text">Sign in with Google to keep your tally safe across devices.</div>
+      <div class="backup-banner-title">Your data isn't backed up</div>
+      <div class="backup-banner-text">Sign in with Google to keep your data safe, or export a backup file.</div>
       <div class="backup-banner-actions">
         <button class="backup-banner-btn primary" onclick="openSettings()">Back up</button>
-        <button class="backup-banner-btn dismiss" onclick="dismissBackupNudge()">Not now</button>
+        <button class="backup-banner-btn dismiss" onclick="dismissBackupNudge()">Remind me later</button>
       </div>
     </div>
   </div>`;
 }
 
 function dismissBackupNudge(){
-  settings.backupNudgeDismissed=true;
+  settings.backupNudgeDismissedAt=Date.now();
+  settings.backupNudgeEntryCount=totalEntryCount();
   db.saveSettings();
   renderBackupBanner();
 }
@@ -3609,6 +3630,15 @@ function startApp(){
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
+// When app comes back to foreground, retry any pending sync
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'&&currentUser&&!currentUser.isAnonymous){
+    if(syncStatus==='error'||syncStatus==='offline'){
+      db._retryCount=0;
+      db._pushSyncedToFirestore();
+    }
+  }
+});
 // Fallback: remove loader after 5s even if auth hangs
 setTimeout(()=>{const loader=document.getElementById('appLoader');if(loader)loader.remove()},5000);
 </script>
