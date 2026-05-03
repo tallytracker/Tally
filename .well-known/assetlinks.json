@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "io.github.tallytracker.twa",
+        "sha256_cert_fingerprints": ["43:77:13:3B:7F:13:0C:39:F7:AA:70:B0:58:72:FC:A7:B0:DD:69:58:C2:B5:CB:FE:95:1B:BD:94:F8:B7:E0:EB"]
+      }
+    }]
