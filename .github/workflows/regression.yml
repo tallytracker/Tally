@@ -1,0 +1,25 @@
+name: Regression tests
+
+# Runs the money/currency regression suite on every push and pull request.
+# A red ✗ on a commit means an edit changed a calculation — investigate before merging.
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:   # lets you run it manually from the Actions tab
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run regression tests
+        run: node tests/regression.test.js
