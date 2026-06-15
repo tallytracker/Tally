@@ -96,6 +96,12 @@ const code = [
   extractFn('projSym'),
   extractFn('cur'),
   extractFn('currencyGroups'),
+  extractFn('isPay'),
+  extractFn('myName'),
+  extractFn('otherName'),
+  extractFn('payerName'),
+  extractFn('receiverName'),
+  extractFn('paidBtnLabel'),
 ].join('\n');
 
 // The per-person balance logic lives inline inside renderProjectDetail.
@@ -110,6 +116,7 @@ const code = [
 })();
 
 // Evaluate the extracted code into this scope.
+var settings = { name: 'Rachel' };
 eval(code);
 const computeBalances = new Function('p', 'FX',
   'with(this){' + global.__BAL__ + ' return {paid,owes,balances,transfers,allSettled};}'
@@ -227,6 +234,21 @@ r = balances(pPending);
 check('LKR entry not convertible', amtMain(pPending, pPending.history[0]), null);
 near('A paid 100', r.paid.A, 100);
 transfers('settle-up (USD only)', r.transfers, [{ from: 'B', to: 'A', amount: 50 }]);
+
+section('Solo button labels — first person, direction-driven (paidBtnLabel)');
+check('I pay -> "I Paid"', paidBtnLabel({ direction: 'pay' }), 'I Paid');
+check('I earn -> "I Got Paid"', paidBtnLabel({ direction: 'earn' }), 'I Got Paid');
+check('missing direction defaults to pay', paidBtnLabel({}), 'I Paid');
+
+section('Live-sharing: counterparty perspective flips the label');
+check('pay activity, other side', paidBtnLabel({ direction: 'pay' }, 'other'), 'I Got Paid');
+check('earn activity, other side', paidBtnLabel({ direction: 'earn' }, 'other'), 'I Paid');
+
+section('Neutral share naming - both parties named');
+check('pay: payer is me', payerName({ direction: 'pay', counterparty: 'Coach Mike' }), 'Rachel');
+check('pay: receiver is counterparty', receiverName({ direction: 'pay', counterparty: 'Coach Mike' }), 'Coach Mike');
+check('earn: payer is counterparty', payerName({ direction: 'earn', counterparty: 'Acme Studio' }), 'Acme Studio');
+check('earn: receiver is me', receiverName({ direction: 'earn', counterparty: 'Acme Studio' }), 'Rachel');
 
 /* ============================ RESULTS ============================ */
 console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
