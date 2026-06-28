@@ -252,4 +252,4 @@ check('earn: receiver is me', receiverName({ direction: 'earn', counterparty: 'A
 
 /* ============================ RESULTS ============================ */
 console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
-process.exi
+process.exit(fail ? 1 : 0);
