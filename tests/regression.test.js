@@ -150,10 +150,10 @@ function section(t) { console.log('\n' + t); }
  * together so the intent is obvious.
  * =================================================================== */
 
-section('Currency display rule (USD/EUR/GBP = symbol, others = code)');
-check('USD', fmtCcy(1200, 'USD'), '$1,200');
-check('EUR', fmtCcy(1200, 'EUR'), '€1,200');
-check('GBP', fmtCcy(1200, 'GBP'), '£1,200');
+section('Currency display rule (multi-currency shows the three-letter ISO code)');
+check('USD', fmtCcy(1200, 'USD'), 'USD 1,200');
+check('EUR', fmtCcy(1200, 'EUR'), 'EUR 1,200');
+check('GBP', fmtCcy(1200, 'GBP'), 'GBP 1,200');
 check('JPY → code', fmtCcy(1200, 'JPY'), 'JPY 1,200');
 check('AED → code', fmtCcy(50, 'AED'), 'AED 50');
 check('LKR → code', fmtCcy(450, 'LKR'), 'LKR 450');
@@ -252,4 +252,4 @@ check('earn: receiver is me', receiverName({ direction: 'earn', counterparty: 'A
 
 /* ============================ RESULTS ============================ */
 console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
-process.exit(fail ? 1 : 0);
+process.exi
