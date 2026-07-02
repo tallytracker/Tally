@@ -103,6 +103,7 @@ const code = [
   extractFn('receiverName'),
   extractFn('paidBtnLabel'),
   extractFn('calcPersonExpenseBreakdown'),
+  extractFn('calcHistoryStatusMap'),
 ].join('\n');
 
 // The per-person balance logic lives inline inside renderProjectDetail.
@@ -294,6 +295,46 @@ brk = calcPersonExpenseBreakdown(pBrk3, 'C');
 check('C has no shares', brk.items.length, 0);
 brk = calcPersonExpenseBreakdown(pBrk3, 'A');
 near('A owes custom share', brk.items[0].remaining, 60);
+
+
+section('History settled marks — activity FIFO (payments cover oldest sessions)');
+FX.rates = { USD: 1 };
+const pAct = { type: 'fixed', mainCur: 'USD', currency: '$', history: [
+  { id: 'pay1', type: 'payment', amount: 60, date: '2026-06-20' },
+  { id: 's3', type: 'charge', amount: 40, note: 'Session 3', date: '2026-06-15' },
+  { id: 's2', type: 'charge', amount: 40, note: 'Session 2', date: '2026-06-10' },
+  { id: 's1', type: 'charge', amount: 40, note: 'Session 1', date: '2026-06-05' },
+] };
+let stm = calcHistoryStatusMap(pAct);
+check('oldest session settled', stm.s1.st, 'settled');
+check('second session partial', stm.s2.st, 'partial');
+near('second session remaining', stm.s2.remaining, 20);
+check('newest session open', stm.s3.st, 'open');
+
+section('History settled marks — advance payment auto-settles new sessions');
+const pAdv = { type: 'fixed', mainCur: 'USD', currency: '$', history: [
+  { id: 'a2', type: 'charge', amount: 40, date: '2026-06-22' },
+  { id: 'a1', type: 'charge', amount: 40, date: '2026-06-21' },
+  { id: 'adv', type: 'payment', amount: 100, date: '2026-06-01' },
+] };
+stm = calcHistoryStatusMap(pAdv);
+check('first session pre-covered', stm.a1.st, 'settled');
+check('second session pre-covered', stm.a2.st, 'settled');
+
+section('History settled marks — split project aggregates all shares');
+const pGrp = { type: 'group', participants: ['Amal', 'Youssef'], mainCur: 'USD', currency: '$', history: [
+  { id: 'gpay', type: 'payment', from: 'Amal', to: 'Youssef', amount: 600, date: '2026-06-04' },
+  { id: 'wood', type: 'charge', amount: 400, paidBy: 'Youssef', note: 'Woodwork', date: '2026-06-03' },
+  { id: 'wash', type: 'charge', amount: 800, paidBy: 'Youssef', note: 'Washer', date: '2026-06-02' },
+  { id: 'tv', type: 'charge', amount: 1000, paidBy: 'Youssef', note: 'TV', date: '2026-06-01' },
+] };
+stm = calcHistoryStatusMap(pGrp);
+check('TV settled (both shares covered)', stm.tv.st, 'settled');
+check('washer partial', stm.wash.st, 'partial');
+near('washer remaining across group', stm.wash.remaining, 300);
+check('woodwork partial (payer own share counts)', stm.wood.st, 'partial');
+check('no marks for track-only projects', JSON.stringify(calcHistoryStatusMap({ type: 'group', trackOnly: true, participants: ['A'], history: [] })), '{}');
+check('no marks for lending circles', JSON.stringify(calcHistoryStatusMap({ type: 'lending', participants: ['A'], history: [] })), '{}');
 
 /* ============================ RESULTS ============================ */
 console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
