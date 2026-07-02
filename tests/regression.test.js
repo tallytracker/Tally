@@ -263,6 +263,7 @@ let brk = calcPersonExpenseBreakdown(pBrk, 'Amal');
 check('3 expense shares', brk.items.length, 3);
 check('oldest first', brk.items.map(i => i.note).join(','), 'TV,Washing machine,Woodwork');
 check('TV settled', brk.items[0].status, 'settled');
+check('TV paid-by recorded', brk.items[0].paidBy, 'Youssef');
 check('washer partial', brk.items[1].status, 'partial');
 near('washer remaining', brk.items[1].remaining, 300);
 check('woodwork open', brk.items[2].status, 'open');
