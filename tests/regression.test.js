@@ -102,6 +102,7 @@ const code = [
   extractFn('payerName'),
   extractFn('receiverName'),
   extractFn('paidBtnLabel'),
+  extractFn('calcPersonExpenseBreakdown'),
 ].join('\n');
 
 // The per-person balance logic lives inline inside renderProjectDetail.
@@ -249,6 +250,49 @@ check('pay: payer is me', payerName({ direction: 'pay', counterparty: 'Coach Mik
 check('pay: receiver is counterparty', receiverName({ direction: 'pay', counterparty: 'Coach Mike' }), 'Coach Mike');
 check('earn: payer is counterparty', payerName({ direction: 'earn', counterparty: 'Acme Studio' }), 'Acme Studio');
 check('earn: receiver is me', receiverName({ direction: 'earn', counterparty: 'Acme Studio' }), 'Rachel');
+
+section('Settle-up breakdown — FIFO allocation of payments to oldest expenses');
+FX.rates = { USD: 1 };
+const pBrk = { participants: ['Amal', 'Youssef'], mainCur: 'USD', currency: '$', history: [
+  { type: 'payment', from: 'Amal', to: 'Youssef', amount: 600, date: '2026-06-04' },
+  { type: 'charge', amount: 400, paidBy: 'Youssef', note: 'Woodwork', date: '2026-06-03' },
+  { type: 'charge', amount: 800, paidBy: 'Youssef', note: 'Washing machine', date: '2026-06-02' },
+  { type: 'charge', amount: 1000, paidBy: 'Youssef', note: 'TV', date: '2026-06-01' },
+] };
+let brk = calcPersonExpenseBreakdown(pBrk, 'Amal');
+check('3 expense shares', brk.items.length, 3);
+check('oldest first', brk.items.map(i => i.note).join(','), 'TV,Washing machine,Woodwork');
+check('TV settled', brk.items[0].status, 'settled');
+check('washer partial', brk.items[1].status, 'partial');
+near('washer remaining', brk.items[1].remaining, 300);
+check('woodwork open', brk.items[2].status, 'open');
+near('woodwork remaining', brk.items[2].remaining, 200);
+near('remaining reconciles with net balance', brk.items.reduce((s, i) => s + i.remaining, 0) + brk.excessReceived, 500);
+
+section('Settle-up breakdown — creditor sees everything settled + amount to receive');
+brk = calcPersonExpenseBreakdown(pBrk, 'Youssef');
+check('all shares settled', brk.items.every(i => i.status === 'settled'), true);
+near('credit left to receive', brk.creditLeft, 500);
+
+section('Settle-up breakdown — debtor who also fronted an expense');
+const pBrk2 = { participants: ['Amal', 'Youssef'], mainCur: 'USD', currency: '$', history: [
+  { type: 'charge', amount: 300, paidBy: 'Amal', note: 'Lamp', date: '2026-06-02' },
+  { type: 'charge', amount: 1000, paidBy: 'Youssef', note: 'TV', date: '2026-06-01' },
+] };
+brk = calcPersonExpenseBreakdown(pBrk2, 'Amal');
+check('TV partial (own spend credited FIFO)', brk.items[0].status, 'partial');
+near('TV remaining', brk.items[0].remaining, 200);
+check('Lamp share open', brk.items[1].status, 'open');
+near('total remaining = net balance', brk.items.reduce((s, i) => s + i.remaining, 0), 350);
+
+section('Settle-up breakdown — custom split: non-participant has no items');
+const pBrk3 = { participants: ['A', 'B', 'C'], mainCur: 'USD', currency: '$', history: [
+  { type: 'charge', amount: 100, paidBy: 'B', customSplit: { A: 60, B: 40 }, date: '2026-06-01' },
+] };
+brk = calcPersonExpenseBreakdown(pBrk3, 'C');
+check('C has no shares', brk.items.length, 0);
+brk = calcPersonExpenseBreakdown(pBrk3, 'A');
+near('A owes custom share', brk.items[0].remaining, 60);
 
 /* ============================ RESULTS ============================ */
 console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
