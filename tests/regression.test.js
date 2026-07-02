@@ -102,6 +102,8 @@ const code = [
   extractFn('payerName'),
   extractFn('receiverName'),
   extractFn('paidBtnLabel'),
+  extractFn('entryShareOf'),
+  extractFn('calcPersonDues'),
   extractFn('calcPersonExpenseBreakdown'),
   extractFn('calcHistoryStatusMap'),
 ].join('\n');
@@ -255,10 +257,10 @@ check('earn: receiver is me', receiverName({ direction: 'earn', counterparty: 'A
 section('Settle-up breakdown — FIFO allocation of payments to oldest expenses');
 FX.rates = { USD: 1 };
 const pBrk = { participants: ['Amal', 'Youssef'], mainCur: 'USD', currency: '$', history: [
-  { type: 'payment', from: 'Amal', to: 'Youssef', amount: 600, date: '2026-06-04' },
-  { type: 'charge', amount: 400, paidBy: 'Youssef', note: 'Woodwork', date: '2026-06-03' },
-  { type: 'charge', amount: 800, paidBy: 'Youssef', note: 'Washing machine', date: '2026-06-02' },
-  { type: 'charge', amount: 1000, paidBy: 'Youssef', note: 'TV', date: '2026-06-01' },
+  { id: 'bpay', type: 'payment', from: 'Amal', to: 'Youssef', amount: 600, date: '2026-06-04' },
+  { id: 'bwood', type: 'charge', amount: 400, paidBy: 'Youssef', note: 'Woodwork', date: '2026-06-03' },
+  { id: 'bwash', type: 'charge', amount: 800, paidBy: 'Youssef', note: 'Washing machine', date: '2026-06-02' },
+  { id: 'btv', type: 'charge', amount: 1000, paidBy: 'Youssef', note: 'TV', date: '2026-06-01' },
 ] };
 let brk = calcPersonExpenseBreakdown(pBrk, 'Amal');
 check('3 expense shares', brk.items.length, 3);
@@ -271,25 +273,28 @@ check('woodwork open', brk.items[2].status, 'open');
 near('woodwork remaining', brk.items[2].remaining, 200);
 near('remaining reconciles with net balance', brk.items.reduce((s, i) => s + i.remaining, 0) + brk.excessReceived, 500);
 
-section('Settle-up breakdown — creditor sees everything settled + amount to receive');
+section('Settle-up breakdown — creditor side (self-first: no dues, fronted items show who owes)');
 brk = calcPersonExpenseBreakdown(pBrk, 'Youssef');
-check('all shares settled', brk.items.every(i => i.status === 'settled'), true);
+check('no dues of his own', brk.items.length, 0);
 near('credit left to receive', brk.creditLeft, 500);
+check('fronted TV fully reimbursed', brk.paidItems[0].status, 'settled');
+near('washer due from Amal', brk.paidItems[1].othersRemaining, 300);
+near('woodwork due from Amal', brk.paidItems[2].othersRemaining, 200);
 
 section('Settle-up breakdown — debtor who also fronted an expense');
 const pBrk2 = { participants: ['Amal', 'Youssef'], mainCur: 'USD', currency: '$', history: [
-  { type: 'charge', amount: 300, paidBy: 'Amal', note: 'Lamp', date: '2026-06-02' },
-  { type: 'charge', amount: 1000, paidBy: 'Youssef', note: 'TV', date: '2026-06-01' },
+  { id: 'b2lamp', type: 'charge', amount: 300, paidBy: 'Amal', note: 'Lamp', date: '2026-06-02' },
+  { id: 'b2tv', type: 'charge', amount: 1000, paidBy: 'Youssef', note: 'TV', date: '2026-06-01' },
 ] };
 brk = calcPersonExpenseBreakdown(pBrk2, 'Amal');
-check('TV partial (own spend credited FIFO)', brk.items[0].status, 'partial');
-near('TV remaining', brk.items[0].remaining, 200);
-check('Lamp share open', brk.items[1].status, 'open');
-near('total remaining = net balance', brk.items.reduce((s, i) => s + i.remaining, 0), 350);
+check('own lamp never appears in her dues', brk.items.length, 1);
+check('TV partial (lamp credit applied)', brk.items[0].status, 'partial');
+near('TV remaining = net balance', brk.items[0].remaining, 350);
+check('fronted lamp — other side settled by netting', brk.paidItems[0].status, 'settled');
 
 section('Settle-up breakdown — custom split: non-participant has no items');
 const pBrk3 = { participants: ['A', 'B', 'C'], mainCur: 'USD', currency: '$', history: [
-  { type: 'charge', amount: 100, paidBy: 'B', customSplit: { A: 60, B: 40 }, date: '2026-06-01' },
+  { id: 'b3cs', type: 'charge', amount: 100, paidBy: 'B', customSplit: { A: 60, B: 40 }, date: '2026-06-01' },
 ] };
 brk = calcPersonExpenseBreakdown(pBrk3, 'C');
 check('C has no shares', brk.items.length, 0);
@@ -332,7 +337,7 @@ stm = calcHistoryStatusMap(pGrp);
 check('TV settled (both shares covered)', stm.tv.st, 'settled');
 check('washer partial', stm.wash.st, 'partial');
 near('washer remaining across group', stm.wash.remaining, 300);
-check('woodwork partial (payer own share counts)', stm.wood.st, 'partial');
+check('woodwork open (payer share auto-covered, Amal share untouched)', stm.wood.st, 'open');
 check('no marks for track-only projects', JSON.stringify(calcHistoryStatusMap({ type: 'group', trackOnly: true, participants: ['A'], history: [] })), '{}');
 check('no marks for lending circles', JSON.stringify(calcHistoryStatusMap({ type: 'lending', participants: ['A'], history: [] })), '{}');
 
