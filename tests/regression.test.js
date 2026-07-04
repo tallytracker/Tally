@@ -106,6 +106,11 @@ const code = [
   extractFn('calcPersonDues'),
   extractFn('calcPersonExpenseBreakdown'),
   extractFn('calcHistoryStatusMap'),
+  extractFn('projNetBalances'),
+  extractFn('calcPairwiseMatrix'),
+  extractFn('pairNet'),
+  extractFn('calcPairwiseTransfers'),
+  extractFn('activePlan'),
 ].join('\n');
 
 // The per-person balance logic lives inline inside renderProjectDetail.
@@ -340,6 +345,67 @@ near('washer remaining across group', stm.wash.remaining, 300);
 check('woodwork open (payer share auto-covered, Amal share untouched)', stm.wood.st, 'open');
 check('no marks for track-only projects', JSON.stringify(calcHistoryStatusMap({ type: 'group', trackOnly: true, participants: ['A'], history: [] })), '{}');
 check('no marks for lending circles', JSON.stringify(calcHistoryStatusMap({ type: 'lending', participants: ['A'], history: [] })), '{}');
+
+section('projNetBalances — standalone helper matches the inline screen math');
+FX.rates = { USD: 1 };
+const pNet = { participants: ['A', 'B', 'C'], mainCur: 'USD', currency: '$', history: [
+  { type: 'charge', amount: 90, paidBy: 'A' },
+  { type: 'charge', amount: 30, paidBy: 'C' },
+] };
+let nb = projNetBalances(pNet);
+check('A +50', nb.A, 50); check('B -40', nb.B, -40); check('C -10', nb.C, -10);
+const rInline = balances(pNet);
+check('identical to inline balances', JSON.stringify(nb), JSON.stringify(rInline.balances));
+
+section('Direct-pay plan — pairwise, mutual debts cancel inside each pair');
+let pw = calcPairwiseTransfers(pNet);
+transfers('pairwise plan', pw, [
+  { from: 'B', to: 'A', amount: 30 },
+  { from: 'C', to: 'A', amount: 20 },
+  { from: 'B', to: 'C', amount: 10 },
+]);
+// per-person pairwise nets must equal the overall balances
+const sumFor = n => rd2(pw.reduce((s, t) => s + (t.to === n ? t.amount : 0) - (t.from === n ? t.amount : 0), 0));
+check('A pairwise net = balance', sumFor('A'), 50);
+check('B pairwise net = balance', sumFor('B'), -40);
+check('C pairwise net = balance', sumFor('C'), -10);
+
+section('Direct-pay plan — a payment reduces that pair only');
+const pNet2 = { participants: ['A', 'B', 'C'], mainCur: 'USD', currency: '$', history: [
+  { type: 'payment', from: 'B', to: 'A', amount: 30 },
+  { type: 'charge', amount: 90, paidBy: 'A' },
+  { type: 'charge', amount: 30, paidBy: 'C' },
+] };
+pw = calcPairwiseTransfers(pNet2);
+transfers('B→A cleared, others untouched', pw, [
+  { from: 'C', to: 'A', amount: 20 },
+  { from: 'B', to: 'C', amount: 10 },
+]);
+
+section('activePlan — respects the project direct-pay flag');
+check('flag off → fewest payments (2 transfers)', activePlan(pNet).length, 2);
+check('flag on → pairwise (3 transfers)', activePlan(Object.assign({ directPay: true }, pNet)).length, 3);
+
+section('Pairwise matrix — custom splits and multi-currency');
+FX.rates = { USD: 1, LKR: 300 };
+const pPair3 = { participants: ['A', 'B'], multiCur: true, curList: ['USD', 'LKR'], mainCur: 'USD', currency: '$', history: [
+  { type: 'charge', amount: 3000, ccy: 'LKR', paidBy: 'A', customSplit: { A: 1500, B: 1500 } },
+] };
+pw = calcPairwiseTransfers(pPair3);
+transfers('LKR custom split → USD pair debt', pw, [{ from: 'B', to: 'A', amount: 5 }]);
+
+section('History settled marks — kept below the Settle All divider');
+FX.rates = { USD: 1 };
+const pAfterSettle = { type: 'group', participants: ['A', 'B'], mainCur: 'USD', currency: '$', history: [
+  { id: 'newC', type: 'charge', amount: 50, paidBy: 'A', date: '2026-07-03' },
+  { id: 'div', type: 'settlement', date: '2026-07-02' },
+  { id: 'oldC', type: 'charge', amount: 80, paidBy: 'A', date: '2026-07-01' },
+  { id: 'oldP', type: 'payment', from: 'B', to: 'A', amount: 40, date: '2026-07-01' },
+] };
+stm = calcHistoryStatusMap(pAfterSettle);
+check('old expense keeps its Settled tag', stm.oldC.st, 'settled');
+check('new expense after reset is open', stm.newC.st, 'open');
+check('payments get no tag', stm.oldP, undefined);
 
 /* ============================ RESULTS ============================ */
 console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
