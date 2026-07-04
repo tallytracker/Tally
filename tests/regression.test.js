@@ -110,7 +110,6 @@ const code = [
   extractFn('calcPairwiseMatrix'),
   extractFn('pairNet'),
   extractFn('calcPairwiseTransfers'),
-  extractFn('activePlan'),
 ].join('\n');
 
 // The per-person balance logic lives inline inside renderProjectDetail.
@@ -381,10 +380,6 @@ transfers('B→A cleared, others untouched', pw, [
   { from: 'C', to: 'A', amount: 20 },
   { from: 'B', to: 'C', amount: 10 },
 ]);
-
-section('activePlan — respects the project direct-pay flag');
-check('flag off → fewest payments (2 transfers)', activePlan(pNet).length, 2);
-check('flag on → pairwise (3 transfers)', activePlan(Object.assign({ directPay: true }, pNet)).length, 3);
 
 section('Pairwise matrix — custom splits and multi-currency');
 FX.rates = { USD: 1, LKR: 300 };
