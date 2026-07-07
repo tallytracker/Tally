@@ -1,0 +1,9 @@
+{
+  "hosting": {
+    "public": "public",
+    "ignore": ["firebase.json", "**/node_modules/**"],
+    "redirects": [
+      { "source": "/", "destination": "/Tally/", "type": 302 }
+    ]
+  }
+}
