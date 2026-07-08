@@ -1,0 +1,26 @@
+# Auto-publish to Firebase Hosting (https://tally-app-c82c6.web.app/Tally/)
+# on every push to main — so "push = live" again, no manual firebase deploy.
+name: Deploy to Firebase Hosting
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  deploy_hosting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble hosting folder (app is served under /Tally/)
+        run: |
+          mkdir -p public/Tally public/.well-known
+          cp index.html sw.js manifest.json privacy.html delete-account.html \
+             icon-192.png icon-512.png icon-192-maskable.png icon-512-maskable.png \
+             apple-touch-icon.png icon.svg public/Tally/
+          cp .well-known/assetlinks.json public/.well-known/assetlinks.json
+      - name: Deploy to Firebase Hosting (live)
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          channelId: live
+          projectId: tally-app-c82c6
