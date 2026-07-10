@@ -110,6 +110,11 @@ const code = [
   extractFn('calcPairwiseMatrix'),
   extractFn('pairNet'),
   extractFn('calcPairwiseTransfers'),
+  extractFn('_mts'),
+  extractFn('mergeHistories'),
+  extractFn('_projNewer'),
+  extractFn('mergeProjectPair'),
+  extractFn('mergeCloudAndLocal'),
 ].join('\n');
 
 // The per-person balance logic lives inline inside renderProjectDetail.
@@ -402,6 +407,62 @@ check('old expense keeps its Settled tag', stm.oldC.st, 'settled');
 check('new expense after reset is open', stm.newC.st, 'open');
 check('payments get no tag', stm.oldP, undefined);
 
+section('Sign-out data-loss guard — a transaction logged while signed out survives re-sign-in');
+// The reported bug: session was revoked (email password changed), user logged a
+// transaction as a guest, then signed back in — and it vanished. Cloud has the
+// activity WITHOUT the new entry; local has the SAME activity WITH it.
+const _cloudA = { projects: [
+  { id: 'act1', name: 'Piano lessons', type: 'fixed', history: [
+    { id: 'e1', type: 'charge', amount: 40, date: '2026-07-08', updatedAt: '2026-07-08T10:00:00Z' },
+  ] },
+], groups: [], settings: { name: 'Rachel' } };
+const _localA = { projects: [
+  { id: 'act1', name: 'Piano lessons', type: 'fixed', updatedAt: '2026-07-10T09:00:00Z', history: [
+    { id: 'e2', type: 'charge', amount: 40, date: '2026-07-10', updatedAt: '2026-07-10T09:00:00Z' },
+    { id: 'e1', type: 'charge', amount: 40, date: '2026-07-08', updatedAt: '2026-07-08T10:00:00Z' },
+  ] },
+], groups: [], settings: { name: 'Rachel' } };
+let _mg = mergeCloudAndLocal(_cloudA, _localA);
+check('activity still present', _mg.projects.length, 1);
+check('offline entry survives merge', _mg.projects[0].history.some(e => e.id === 'e2'), true);
+check('original cloud entry kept', _mg.projects[0].history.some(e => e.id === 'e1'), true);
+check('no duplicate of the shared entry', _mg.projects[0].history.filter(e => e.id === 'e1').length, 1);
+check('history stays newest-first', _mg.projects[0].history.map(e => e.id).join(','), 'e2,e1');
+
+section('Sign-out data-loss guard — brand-new guest project is added, cloud-only project kept');
+const _cloudB = { projects: [ { id: 'p1', name: 'Cloud only', history: [] } ], groups: [] };
+const _localB = { projects: [
+  { id: 'p1', name: 'Cloud only', history: [] },
+  { id: 'p2', name: 'Made while signed out', history: [ { id: 'n1', type: 'charge', amount: 12, date: '2026-07-10' } ] },
+], groups: [] };
+_mg = mergeCloudAndLocal(_cloudB, _localB);
+check('both projects present', _mg.projects.map(p => p.id).sort().join(','), 'p1,p2');
+check('new guest project keeps its entry', _mg.projects.find(p => p.id === 'p2').history.length, 1);
+
+section('Sign-out data-loss guard — union is symmetric (entry added on another device is kept too)');
+const _cloudC = { projects: [ { id: 'a', name: 'A', history: [
+  { id: 'x1', type: 'charge', amount: 5, date: '2026-07-09' },
+  { id: 'x2', type: 'charge', amount: 7, date: '2026-07-10' },
+] } ] };
+const _localC = { projects: [ { id: 'a', name: 'A', history: [
+  { id: 'x1', type: 'charge', amount: 5, date: '2026-07-09' },
+  { id: 'x3', type: 'charge', amount: 9, date: '2026-07-08' },
+] } ] };
+_mg = mergeCloudAndLocal(_cloudC, _localC);
+check('all three entries present', _mg.projects[0].history.map(e => e.id).sort().join(','), 'x1,x2,x3');
+
+section('Sign-out data-loss guard — an edit made while signed out wins by updatedAt (no dup)');
+const _cloudD = { projects: [ { id: 'a', name: 'A', history: [
+  { id: 'y1', type: 'charge', amount: 40, note: 'old', date: '2026-07-01', updatedAt: '2026-07-01T00:00:00Z' },
+] } ] };
+const _localD = { projects: [ { id: 'a', name: 'A', history: [
+  { id: 'y1', type: 'charge', amount: 55, note: 'fixed while offline', date: '2026-07-01', updatedAt: '2026-07-10T00:00:00Z' },
+] } ] };
+_mg = mergeCloudAndLocal(_cloudD, _localD);
+check('one entry, not two', _mg.projects[0].history.length, 1);
+check('newer edit wins', _mg.projects[0].history[0].amount, 55);
+
 /* ============================ RESULTS ============================ */
 console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
 process.exit(fail ? 1 : 0);
+
