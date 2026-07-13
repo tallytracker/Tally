@@ -1,0 +1,35 @@
+<!--
+  Tally (c) 2026. All rights reserved.
+  This code is proprietary and confidential. No part of it may be copied,
+  modified, distributed, or used in any form without prior written permission.
+  See the LICENSE file in this repository.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Get Tally — Simple Balance Tracker</title>
+<meta name="robots" content="noindex">
+<style>body{font-family:system-ui,-apple-system,sans-serif;background:#f7f5f2;color:#3d3a34;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;text-align:center}a{color:#e67e22;font-weight:600}</style>
+</head>
+<body>
+<div>
+  <p>Taking you to Tally&hellip;</p>
+  <p><a id="fallback" href="https://tallytracker.github.io/Tally/">Open Tally</a></p>
+</div>
+<script>
+(function(){
+  var PLAY='https://play.google.com/store/apps/details?id=io.github.tallytracker.twa';
+  var APPSTORE='';/* set to the App Store URL once Tally is live on iOS — recipients on iPhone then go to the App Store automatically */
+  var WEB='https://tallytracker.github.io/Tally/';
+  var ua=navigator.userAgent||'';
+  var dest=WEB;
+  if(/android/i.test(ua)){dest=PLAY}
+  else if(/iphone|ipad|ipod/i.test(ua)){dest=APPSTORE||WEB}
+  document.getElementById('fallback').href=dest;
+  location.replace(dest);
+})();
+</script>
+</body>
+</html>
