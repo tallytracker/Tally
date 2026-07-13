@@ -115,6 +115,10 @@ const code = [
   extractFn('_projNewer'),
   extractFn('mergeProjectPair'),
   extractFn('mergeCloudAndLocal'),
+  extractFn('calcBalance'),
+  extractFn('syncBalance'),
+  extractFn('calcRunningBalances'),
+  extractFn('removeEntriesByIds'),
 ].join('\n');
 
 // The per-person balance logic lives inline inside renderProjectDetail.
@@ -462,7 +466,71 @@ _mg = mergeCloudAndLocal(_cloudD, _localD);
 check('one entry, not two', _mg.projects[0].history.length, 1);
 check('newer edit wins', _mg.projects[0].history[0].amount, 55);
 
+
+/* ---- Running balance in the history log + Undo Settle (v56) ---- */
+section('Running balance — 1-on-1: charges add, payments subtract (newest first)');
+FX.rates = { USD: 1 };
+const _rbAct = { type: 'hourly', currency: '$', history: [
+  { id: 'r3', type: 'payment', amount: 50, date: '2026-07-03' },
+  { id: 'r2', type: 'charge', amount: 80, date: '2026-07-02' },
+  { id: 'r1', type: 'charge', amount: 100, date: '2026-07-01' },
+] };
+let _rb = calcRunningBalances(_rbAct);
+check('after 1st charge', _rb.r1, 100);
+check('after 2nd charge', _rb.r2, 180);
+check('after payment', _rb.r3, 130);
+
+section('Running balance — settlement divider resets the figure to zero');
+const _rbSet = { type: 'hourly', currency: '$', history: [
+  { id: 'n1', type: 'charge', amount: 25, date: '2026-07-05' },
+  { id: 'sd', type: 'settlement', amount: 130, date: '2026-07-04' },
+  { id: 'o1', type: 'charge', amount: 130, date: '2026-07-01' },
+] };
+_rb = calcRunningBalances(_rbSet);
+check('pre-divider entry keeps its own figure', _rb.o1, 130);
+check('divider itself gets no figure', _rb.sd, undefined);
+check('post-divider entry restarts from zero', _rb.n1, 25);
+
+section('Running balance — prepayment goes negative (prepaid)');
+const _rbNeg = { type: 'hourly', currency: '$', history: [
+  { id: 'p1', type: 'payment', amount: 200, date: '2026-07-01' },
+] };
+check('overpaid balance is negative', calcRunningBalances(_rbNeg).p1, -200);
+
+section('Running balance — group project shows running total spent on charges only');
+const _rbGrp = { participants: ['A', 'B'], mainCur: 'USD', currency: '$', history: [
+  { id: 'g3', type: 'payment', from: 'B', to: 'A', amount: 40, date: '2026-07-03' },
+  { id: 'g2', type: 'charge', amount: 60, paidBy: 'B', date: '2026-07-02' },
+  { id: 'g1', type: 'charge', amount: 90, paidBy: 'A', date: '2026-07-01' },
+] };
+_rb = calcRunningBalances(_rbGrp);
+check('total after 1st expense', _rb.g1, 90);
+check('total after 2nd expense', _rb.g2, 150);
+check('member payment gets no figure', _rb.g3, undefined);
+
+section('Running balance — pending exchange rate suppresses figures instead of faking them');
+FX.rates = { USD: 1 };          // no LKR rate
+const _rbFx = { multiCur: true, curList: ['USD', 'LKR'], mainCur: 'USD', currency: '$', history: [
+  { id: 'f2', type: 'charge', amount: 10, ccy: 'USD', date: '2026-07-02' },
+  { id: 'f1', type: 'charge', amount: 9000, ccy: 'LKR', date: '2026-07-01' },
+] };
+_rb = calcRunningBalances(_rbFx);
+check('unconvertible entry suppressed', _rb.f1, null);
+check('everything after it suppressed too', _rb.f2, null);
+
+section('Undo Settle All — removing the settlement lines restores the balance');
+const _un = { type: 'hourly', currency: '$', history: [
+  { id: 'sX', type: 'settlement', amount: 130, date: '2026-07-04' },
+  { id: 'c2', type: 'charge', amount: 30, date: '2026-07-02' },
+  { id: 'c1', type: 'charge', amount: 100, date: '2026-07-01' },
+] };
+syncBalance(_un);
+check('settled balance is zero', _un.balance, 0);
+removeEntriesByIds(_un, ['sX']);
+check('settlement line removed', _un.history.length, 2);
+check('balance recomputes itself', _un.balance, 130);
+check('original entries untouched', _un.history.map(h => h.id).join(','), 'c2,c1');
+
 /* ============================ RESULTS ============================ */
 console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
 process.exit(fail ? 1 : 0);
-
