@@ -119,6 +119,8 @@ const code = [
   extractFn('syncBalance'),
   extractFn('calcRunningBalances'),
   extractFn('removeEntriesByIds'),
+  extractFn('sessionNet'),
+  extractFn('remainingMins'),
 ].join('\n');
 
 // The per-person balance logic lives inline inside renderProjectDetail.
@@ -530,6 +532,38 @@ removeEntriesByIds(_un, ['sX']);
 check('settlement line removed', _un.history.length, 2);
 check('balance recomputes itself', _un.balance, 130);
 check('original entries untouched', _un.history.map(h => h.id).join(','), 'c2,c1');
+
+section('Remaining time drops when a payment is logged (22 Jul 2026 bug)');
+// Hourly @ 43.73/hr: 37h30m logged = 1639.875. Payment of 1399.4 leaves
+// 240.475 → 240.475/43.73*60 ≈ 330 min = 5h30m. Before the fix the count
+// stayed frozen at the gross logged 37h30m.
+const _rem = { type: 'hourly', rate: 43.73, currency: '$', history: [
+  { id: 'rp1', type: 'payment', amount: 1399.4, date: '2026-07-22' },
+  { id: 'rc1', type: 'charge', amount: 1639.875, durationMins: 2250, date: '2026-07-20' },
+] };
+check('hourly: remaining mins after payment', remainingMins(_rem), 330);
+check('hourly: no payment yet = full logged time', remainingMins({ type: 'hourly', rate: 40, history: [ { id: 'a', type: 'charge', amount: 1500, durationMins: 2250, date: '2026-07-20' } ] }), 2250);
+check('hourly: fully paid = 0 mins', remainingMins({ type: 'hourly', rate: 40, history: [
+  { id: 'b2', type: 'payment', amount: 1500, date: '2026-07-21' },
+  { id: 'b1', type: 'charge', amount: 1500, date: '2026-07-20' },
+] }), 0);
+check('hourly: overpaid goes negative (prepaid)', remainingMins({ type: 'hourly', rate: 40, history: [
+  { id: 'c2', type: 'payment', amount: 1700, date: '2026-07-21' },
+  { id: 'c1', type: 'charge', amount: 1500, date: '2026-07-20' },
+] }), -300);
+check('custom hr-rate: payment reduces mins', remainingMins({ type: 'customrate', customRateUnit: 'hr', customRateAmt: 100, customRateMin: 2, history: [
+  { id: 'd2', type: 'payment', amount: 100, date: '2026-07-21' },
+  { id: 'd1', type: 'charge', amount: 200, date: '2026-07-20' },
+] }), 120);
+check('one-off charge excluded from time count', remainingMins({ type: 'hourly', rate: 40, history: [
+  { id: 'e2', type: 'charge', amount: 55, oneOff: true, date: '2026-07-21' },
+  { id: 'e1', type: 'charge', amount: 400, date: '2026-07-20' },
+] }), 600);
+check('settlement resets the window', remainingMins({ type: 'hourly', rate: 40, history: [
+  { id: 'f3', type: 'charge', amount: 80, date: '2026-07-23' },
+  { id: 'f2', type: 'settlement', amount: 0, date: '2026-07-22' },
+  { id: 'f1', type: 'charge', amount: 1500, date: '2026-07-20' },
+] }), 120);
 
 /* ============================ RESULTS ============================ */
 console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
