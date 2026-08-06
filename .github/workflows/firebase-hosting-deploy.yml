@@ -14,8 +14,10 @@ jobs:
         run: |
           mkdir -p public/Tally public/.well-known
           cp index.html sw.js manifest.json privacy.html delete-account.html \
+             support.html \
              icon-192.png icon-512.png icon-192-maskable.png icon-512-maskable.png \
              apple-touch-icon.png icon.svg public/Tally/
+          cp -r get public/Tally/get
           cp .well-known/assetlinks.json public/.well-known/assetlinks.json
       - name: Deploy to Firebase Hosting (live)
         uses: FirebaseExtended/action-hosting-deploy@v0
