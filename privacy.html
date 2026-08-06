@@ -67,7 +67,7 @@ a:hover{text-decoration:underline}
   <h1>Privacy Policy</h1>
 </div>
 
-<p class="updated">Last updated: August 5, 2026</p>
+<p class="updated">Last updated: August 6, 2026</p>
 
 <p>Tally ("the App") is a personal balance tracker built by an independent developer. Your privacy matters, and this policy explains what data the App collects, how it's used, and your rights.</p>
 
@@ -78,12 +78,19 @@ a:hover{text-decoration:underline}
   <li>Your Google display name, email address, and profile photo (provided by Google Sign-In)</li>
   <li>Your activity and balance data, which is synced to Google Firebase Firestore so you can access it across devices</li>
 </ul>
+<p>When you sign in with Apple, we collect:</p>
+<ul>
+  <li>Your name and email address, as provided by Sign in with Apple. If you choose "Hide My Email", Apple gives us only a private relay address (an <code>@privaterelay.appleid.com</code> address) — we never see your real email, and messages sent to it are forwarded by Apple</li>
+  <li>An Apple-issued identifier for your account, used only to recognise you when you sign in again</li>
+  <li>Your activity and balance data, which is synced to Google Firebase Firestore so you can access it across devices</li>
+</ul>
+<p>We do not receive your Apple password, payment details, or any other information from your Apple Account.</p>
 
 <h2>2. How We Use Your Data</h2>
 <p>Your data is used solely to provide the App's functionality — tracking balances, syncing across devices, and generating exports (PDF/Excel) on your device. We do not sell, share, or use your data for advertising or analytics.</p>
 
 <h2>3. Data Storage & Security</h2>
-<p>Cloud data is stored in Google Firebase Firestore, which provides encryption in transit and at rest. Your data is associated with your Google account and is only accessible when you are signed in. When you use the App without signing in, data is stored locally in your browser. If you later sign in, your local data is merged to the cloud to enable cross-device sync.</p>
+<p>Cloud data is stored in Google Firebase Firestore, which provides encryption in transit and at rest. Your data is associated with the account you signed in with (Google or Apple) and is only accessible when you are signed in. When you use the App without signing in, data is stored locally in your browser. If you later sign in, your local data is merged to the cloud to enable cross-device sync.</p>
 
 <h2>4. Third-Party Services</h2>
 <p>The App uses the following third-party services:</p>
@@ -91,8 +98,10 @@ a:hover{text-decoration:underline}
   <li><strong>Google Firebase Authentication</strong> — to handle sign-in</li>
   <li><strong>Google Firebase Firestore</strong> — to store and sync your data</li>
   <li><strong>Google Fonts</strong> — to load the Sora typeface</li>
+  <li><strong>Sign in with Apple</strong> — an optional way to sign in, provided by Apple</li>
 </ul>
-<p>These services are governed by <a href="https://policies.google.com/privacy" target="_blank">Google's Privacy Policy</a>.</p>
+<p>The Google services above are governed by <a href="https://policies.google.com/privacy" target="_blank">Google's Privacy Policy</a>. Sign in with Apple is governed by <a href="https://www.apple.com/legal/privacy/" target="_blank">Apple's Privacy Policy</a>.</p>
+<p>When you delete your account from inside the App, we also ask Apple to revoke the sign-in link between your Apple Account and Tally, so Tally no longer appears in your Apple Account settings.</p>
 
 <h2>5. Data Sharing</h2>
 <p>We do not share your personal data with any third parties. Your balance and activity data is never shared unless you explicitly choose to export or share it yourself using the App's export features.</p>

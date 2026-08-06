@@ -565,6 +565,162 @@ check('settlement resets the window', remainingMins({ type: 'hourly', rate: 40, 
   { id: 'f1', type: 'charge', amount: 1500, date: '2026-07-20' },
 ] }), 120);
 
+/* ===================== ACCOUNT DELETION (App Store 5.1.1(v)) =====================
+ * Added 6 Aug 2026. This is the one flow that destroys user data and the one
+ * Apple checks by hand, so it gets real execution tests, not just a smoke read.
+ *
+ * The deletion code touches Firebase, the DOM and localStorage, none of which
+ * exist here — so we run the REAL extracted functions inside a sandbox of
+ * stubs and assert on what they did and, crucially, IN WHAT ORDER.
+ * ============================================================================ */
+section('Account deletion — order of operations');
+
+// extractFn() above drops a leading `async`, which matters for these.
+function extractAsyncFn(name) {
+  const m = new RegExp('(async\\s+)?function\\s+' + name + '\\s*\\(').exec(src);
+  if (!m) throw new Error('Function not found in index.html: ' + name +
+    ' (renamed? update regression.test.js)');
+  let i = src.indexOf('{', m.index), depth = 0, j = i;
+  while (j < src.length) {
+    const c = src[j];
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; if (depth === 0) { j++; break; } }
+    j++;
+  }
+  return src.slice(m.index, j);
+}
+
+// Build a fresh sandbox per scenario so one test can't leak into the next.
+function runDeletion(opts) {
+  opts = opts || {};
+  const log = [];
+  const store = { u1: true };
+  const local = { 'tally-projects': 'x', 'tally-settings': 'y', 'tally-fx': 'z' };
+
+  const user = {
+    uid: 'u1',
+    isAnonymous: !!opts.anonymous,
+    email: 'r@example.com',
+    providerData: [{ providerId: opts.provider || 'google.com' }],
+    delete: async function () {
+      if (opts.requiresRecentLogin && !log.includes('reauth')) {
+        log.push('user.delete:rejected');
+        const e = new Error('recent login'); e.code = 'auth/requires-recent-login'; throw e;
+      }
+      log.push('user.delete'); delete store.u1;
+    }
+  };
+
+  const sandbox = {
+    firebaseAvailable: opts.offline ? false : true,
+    APPLE_SIGNIN_ENABLED: !!opts.appleEnabled,
+    auth: {
+      currentUser: user,
+      signInAnonymously: async function () { log.push('signInAnonymously'); }
+    },
+    firestore: {
+      collection: function (c) {
+        return { doc: function () { return { delete: async function () { log.push('delete:' + c); } }; } };
+      }
+    },
+    firebase: {
+      functions: function () {
+        return { httpsCallable: function (n) {
+          return async function () {
+            log.push('call:' + n);
+            if (opts.revokeThrows && n === 'revokeAppleToken') throw new Error('boom');
+            return { data: { ok: true, revoked: true } };
+          };
+        } };
+      },
+      auth: { OAuthProvider: function () { return { addScope: function () {} }; },
+              GoogleAuthProvider: function () { return {}; } }
+    },
+    firestoreUnsubscribe: function () { log.push('unsubscribe'); },
+    LOCAL_KEYS: { a: 'tally-projects' },
+    SYNCED_KEYS: { b: 'tally-settings' },
+    FX_KEY: 'tally-fx',
+    projects: [{ id: 1 }], groups: [{ id: 2 }],
+    localStorage: { removeItem: function (k) { log.push('rm:' + k); delete local[k]; } },
+    sessionStorage: { setItem: function () {}, removeItem: function () {}, getItem: function () { return null; } },
+    showToast: function (m) { log.push('toast:' + String(m).slice(0, 28)); },
+    closeOverlay: function () { log.push('closeOverlay'); },
+    esc: function (s) { return s; },
+    document: { getElementById: function () { return { innerHTML: '' }; } },
+    location: { reload: function () { log.push('reload'); } },
+    setTimeout: function (fn) { return 0; },   // don't actually reload
+    console: { error: function () {}, warn: function () {}, log: function () {} },
+    _accountDeleting: false,
+    _preferRedirectAuth: function () { return false; }
+  };
+
+  const body = [
+    extractAsyncFn('_revokeAppleTokenIfNeeded'),
+    extractAsyncFn('_reauthenticateForDelete'),
+    extractFn('_clearAllLocalData'),
+    extractAsyncFn('doDeleteAccount')
+  ].join('\n');
+
+  const run = new Function('sb', 'log',
+    'with(sb){' + body +
+    ' if(sb.__reauthOk!==undefined){_reauthenticateForDelete=async function(){log.push("reauth");return sb.__reauthOk};}' +
+    ' return doDeleteAccount();}'
+  );
+  if (opts.requiresRecentLogin) sandbox.__reauthOk = opts.reauthOk !== false;
+
+  return run(sandbox, log).then(function () {
+    return { log: log, store: store, local: local, sandbox: sandbox };
+  });
+}
+
+// Node runs this file top-to-bottom, so collect the async results then assert.
+const _deletionChecks = [];
+
+_deletionChecks.push(runDeletion({ appleEnabled: true, provider: 'apple.com' }).then(function (r) {
+  const iRevoke = r.log.indexOf('call:revokeAppleToken');
+  const iUsers = r.log.indexOf('delete:users');
+  const iDelete = r.log.indexOf('user.delete');
+  check('Apple token revoked before the Auth user is deleted', iRevoke > -1 && iRevoke < iDelete, true);
+  check('cloud data deleted before the Auth user (else it orphans)', iUsers > -1 && iUsers < iDelete, true);
+  check('reminders doc deleted too', r.log.includes('delete:reminders'), true);
+  check('live listener detached first', r.log.indexOf('unsubscribe') < iUsers, true);
+  check('Auth user actually deleted', r.store.u1, undefined);
+  check('drops back to an anonymous session', r.log.includes('signInAnonymously'), true);
+}));
+
+_deletionChecks.push(runDeletion({ provider: 'google.com', appleEnabled: true }).then(function (r) {
+  check('Google-only user: no pointless revoke call', r.log.includes('call:revokeAppleToken'), false);
+  check('Google-only user: still fully deleted', r.store.u1, undefined);
+}));
+
+_deletionChecks.push(runDeletion({ appleEnabled: true, provider: 'apple.com', revokeThrows: true }).then(function (r) {
+  check('revoke failure does NOT strand the user', r.store.u1, undefined);
+  check('revoke failure still wipes local data', Object.keys(r.local).length, 0);
+}));
+
+_deletionChecks.push(runDeletion({ anonymous: true }).then(function (r) {
+  check('anonymous user cannot delete an account', r.log.includes('user.delete'), false);
+}));
+
+_deletionChecks.push(runDeletion({ offline: true }).then(function (r) {
+  check('offline: refuses rather than half-deleting', r.log.includes('user.delete'), false);
+  check('offline: local data left intact', Object.keys(r.local).length, 3);
+}));
+
+_deletionChecks.push(runDeletion({ requiresRecentLogin: true, reauthOk: true }).then(function (r) {
+  check('stale login: re-authenticates then deletes', r.log.includes('user.delete'), true);
+}));
+
+_deletionChecks.push(runDeletion({ requiresRecentLogin: true, reauthOk: false }).then(function (r) {
+  check('failed re-auth: aborts without deleting', r.store.u1, true);
+  check('failed re-auth: local data NOT wiped', Object.keys(r.local).length, 3);
+}));
+
 /* ============================ RESULTS ============================ */
-console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
-process.exit(fail ? 1 : 0);
+Promise.all(_deletionChecks).then(function () {
+  console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
+  process.exit(fail ? 1 : 0);
+}).catch(function (e) {
+  console.error('\n❌ Deletion tests threw: ' + (e && e.stack || e));
+  process.exit(1);
+});
