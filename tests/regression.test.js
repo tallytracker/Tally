@@ -716,8 +716,135 @@ _deletionChecks.push(runDeletion({ requiresRecentLogin: true, reauthOk: false })
   check('failed re-auth: local data NOT wiped', Object.keys(r.local).length, 3);
 }));
 
+
+/* ===== WELCOME FLOW — TWO STEPS (added 11 Aug 2026) =====
+ * Step 1 = sign-in choices, step 2 = the name. The bug class these guard
+ * against: landing a user on the wrong step, or letting the account's display
+ * name silently override what the user actually typed. */
+function runWelcome(opts) {
+  const els = {};
+  function el(id) {
+    if (!els[id]) els[id] = { style: {}, textContent: '', innerHTML: '', value: '', focus: function () {} };
+    return els[id];
+  }
+  const sandbox = {
+    currentUser: opts.signedIn ? { isAnonymous: false } : (opts.anonymous ? { isAnonymous: true } : null),
+    settings: { name: opts.name || '', nameNeedsConfirm: !!opts.needsConfirm },
+    welcomeSignInSkipped: !!opts.skipped,
+    document: { getElementById: el },
+    setTimeout: function () { return 0; },
+    showToast: function () {},
+    db: { saveSettings: function () {} }
+  };
+  const body = [extractFn('renderWelcome'), extractFn('skipWelcomeSignIn'), extractFn('welcomeBackToSignIn')].join('\n');
+  new Function('sb', 'with(sb){' + body + ' renderWelcome();}')(sandbox);
+  return { els: els, sb: sandbox };
+}
+
+let w = runWelcome({ anonymous: true });
+check('welcome: brand-new user starts on the sign-in step', w.els.welcomeStep1.style.display, '');
+check('welcome: name step hidden until sign-in is answered', w.els.welcomeStep2.style.display, 'none');
+
+w = runWelcome({ anonymous: true, skipped: true });
+check('welcome: "Sign in later" moves to the name step', w.els.welcomeStep2.style.display, '');
+check('welcome: sign-in step hidden after skipping', w.els.welcomeStep1.style.display, 'none');
+check('welcome: skipper can go Back to the sign-in buttons', w.els.welcomeBackBtn.style.display, '');
+
+w = runWelcome({ signedIn: true, name: 'Rachel', needsConfirm: true });
+check('welcome: signed-in user lands on the name step', w.els.welcomeStep2.style.display, '');
+check('welcome: name prefilled from the account', w.els.welcomeName.value, 'Rachel');
+check('welcome: no Back for a signed-in user', w.els.welcomeBackBtn.style.display, 'none');
+
+// A half-typed name must never be clobbered by a re-render.
+(function () {
+  const r = runWelcome({ signedIn: true, name: 'Rachel' });
+  r.els.welcomeName.value = 'Rach';
+  new Function('sb', 'with(sb){' + extractFn('renderWelcome') + ' renderWelcome();}')({
+    currentUser: { isAnonymous: false }, settings: { name: 'Rachel' }, welcomeSignInSkipped: false,
+    document: { getElementById: function (id) { return r.els[id] || (r.els[id] = { style: {}, value: '', focus: function () {} }); } },
+    setTimeout: function () { return 0; }
+  });
+  check('welcome: a name being typed is not overwritten by the account name', r.els.welcomeName.value, 'Rach');
+})();
+
+/* ===== SIGN OUT CLEARS THE SCREEN (added 11 Aug 2026) =====
+ * The screen must empty, but NEVER at the cost of unsynced work. */
+function runSignOut(opts) {
+  const log = [];
+  const local = { 'tally-projects': 1, 'tally-settings': 1, 'tally-fx': 1 };
+  const sandbox = {
+    firebaseAvailable: opts.offline ? false : true,
+    syncStatus: opts.syncStatus || 'synced',
+    auth: {
+      signOut: async function () { log.push('signOut'); },
+      signInAnonymously: async function () { log.push('signInAnonymously'); }
+    },
+    firebase: {
+      firestore: function () {
+        return { waitForPendingWrites: async function () {
+          if (opts.flushFails) throw new Error('offline');
+          log.push('flushed');
+        } };
+      }
+    },
+    firestoreUnsubscribe: function () { log.push('unsubscribe'); },
+    LOCAL_KEYS: { a: 'tally-projects' }, SYNCED_KEYS: { b: 'tally-settings' }, FX_KEY: 'tally-fx',
+    projects: [{ id: 1 }], groups: [{ id: 2 }],
+    settings: { name: 'Rachel', email: 'r@example.com' },
+    welcomeSignInSkipped: true,
+    appStarted: true,
+    startApp: function () { log.push('startApp'); },
+    localStorage: { removeItem: function (k) { log.push('rm:' + k); delete local[k]; } },
+    showToast: function (m) { log.push('toast:' + m); },
+    closeOverlay: function () {},
+    doBackupExport: function () { log.push('export'); },
+    document: { getElementById: function () { return { innerHTML: '' }; } },
+    console: { error: function () {}, warn: function () {}, log: function () {} },
+    setTimeout: function (fn, ms) { return 0; },
+    Promise: Promise
+  };
+  const body = [
+    extractAsyncFn('_flushPendingWrites'),
+    extractFn('_clearAllLocalData'),
+    extractFn('confirmUnsyncedSignOut'),
+    extractAsyncFn('_doSignOut'),
+    extractAsyncFn('signOutUser')
+  ].join('\n');
+  const run = new Function('sb', 'log', 'with(sb){' + body + ' return signOutUser();}');
+  return run(sandbox, log).then(function () { return { log: log, local: local, sb: sandbox }; });
+}
+
+const _signOutChecks = [];
+
+_signOutChecks.push(runSignOut({ syncStatus: 'synced' }).then(function (r) {
+  check('sign-out: synced user is signed out', r.log.includes('signOut'), true);
+  check('sign-out: local cache cleared so the screen empties', Object.keys(r.local).length, 0);
+  check('sign-out: in-memory trackers dropped too', r.sb.projects.length, 0);
+  check('sign-out: previous name does not linger', r.sb.settings.name, '');
+  check('sign-out: live listener detached first', r.log.indexOf('unsubscribe') < r.log.indexOf('signOut'), true);
+  check('sign-out: back to an anonymous session', r.log.includes('signInAnonymously'), true);
+  check('sign-out: returns to the welcome screen', r.log.includes('startApp'), true);
+}));
+
+_signOutChecks.push(runSignOut({ syncStatus: 'syncing' }).then(function (r) {
+  check('sign-out: waits for pending writes before clearing', r.log.includes('flushed'), true);
+  check('sign-out: clears once the flush succeeds', Object.keys(r.local).length, 0);
+}));
+
+// THE IMPORTANT ONE — unsynced work must survive.
+_signOutChecks.push(runSignOut({ syncStatus: 'offline', flushFails: true }).then(function (r) {
+  check('sign-out: unsynced data is NOT wiped', Object.keys(r.local).length, 3);
+  check('sign-out: unsynced user is not signed out behind their back', r.log.includes('signOut'), false);
+  check('sign-out: trackers stay on screen when unsynced', r.sb.projects.length, 1);
+}));
+
+_signOutChecks.push(runSignOut({ offline: true }).then(function (r) {
+  check('sign-out: offline refuses outright', r.log.includes('signOut'), false);
+  check('sign-out: offline leaves local data intact', Object.keys(r.local).length, 3);
+}));
+
 /* ============================ RESULTS ============================ */
-Promise.all(_deletionChecks).then(function () {
+Promise.all(_deletionChecks.concat(_signOutChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
   process.exit(fail ? 1 : 0);
 }).catch(function (e) {
