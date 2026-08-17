@@ -1158,8 +1158,86 @@ function runSwitch(seq) {
 })();
 
 
+
+/* ---- Account deletion must survive a stale sign-in (added 17 Aug 2026) ----
+   Firebase refuses to delete a user whose sign-in is older than ~5 minutes.
+   _reauthenticateForDelete() only knew the WEB flows, so inside the iOS
+   wrapper it fired reauthenticateWithRedirect (which a WKWebView cannot
+   complete) and returned false by design. Result: anyone signed in for more
+   than five minutes could not delete their account on iOS at all — and Apple
+   REQUIRES in-app deletion to work (5.1.1(v)). Reported on device 17 Aug. */
+function runReauth(opts) {
+  const log = [];
+  const sb = {
+    _hasNativeAppleBridge: function () { return !!opts.appleBridge; },
+    _hasNativeGoogleBridge: function () { return !!opts.googleBridge; },
+    _appleCredential: async function () {
+      log.push('appleSheet');
+      if (opts.nativeThrows) throw new Error('sheet cancelled');
+      return { credential: 'APPLE_CRED' };
+    },
+    _googleCredential: async function () {
+      log.push('googleSheet');
+      if (opts.nativeThrows) throw new Error('sheet cancelled');
+      return { credential: 'GOOGLE_CRED' };
+    },
+    _preferRedirectAuth: function () { return !!opts.preferRedirect; },
+    firebase: {
+      auth: {
+        OAuthProvider: function () { this.addScope = function () {}; },
+        GoogleAuthProvider: function () {}
+      }
+    },
+    auth: { reauthenticateWithRedirect: async function () { log.push('webRedirect'); } },
+    sessionStorage: { setItem: function () {} },
+    console: { error: function () {} }
+  };
+  const user = {
+    providerData: [{ providerId: opts.provider }],
+    reauthenticateWithCredential: async function (c) { log.push('reauthWithCredential:' + c); },
+    reauthenticateWithPopup: async function () { log.push('webPopup'); }
+  };
+  const run = new Function('sb', 'with(sb){' + extractAsyncFn('_reauthenticateForDelete') +
+    ' return _reauthenticateForDelete;}');
+  return run(sb)(user).then(function (ok) { return { ok: ok, log: log }; });
+}
+
+const _reauthChecks = [];
+// THE BUG: Apple user in the iOS wrapper, signed in over 5 minutes ago.
+_reauthChecks.push(runReauth({ provider: 'apple.com', appleBridge: true, preferRedirect: true })
+  .then(function (r) {
+    check('delete reauth: apple uses the native sheet', r.log.includes('appleSheet'), true);
+    check('delete reauth: apple reauthenticates with the credential', r.log.includes('reauthWithCredential:APPLE_CRED'), true);
+    check('delete reauth: apple never hits the dead-end redirect', r.log.includes('webRedirect'), false);
+    check('delete reauth: apple succeeds so deletion continues', r.ok, true);
+  }));
+// Same for a Google user in the wrapper.
+_reauthChecks.push(runReauth({ provider: 'google.com', googleBridge: true, preferRedirect: true })
+  .then(function (r) {
+    check('delete reauth: google uses the native sheet', r.log.includes('googleSheet'), true);
+    check('delete reauth: google reauthenticates with the credential', r.log.includes('reauthWithCredential:GOOGLE_CRED'), true);
+    check('delete reauth: google succeeds so deletion continues', r.ok, true);
+  }));
+// A cancelled or broken sheet must fall back, not make deletion impossible.
+_reauthChecks.push(runReauth({ provider: 'apple.com', appleBridge: true, preferRedirect: false, nativeThrows: true })
+  .then(function (r) {
+    check('delete reauth: a failed native sheet falls back to the web flow', r.log.includes('webPopup'), true);
+    check('delete reauth: fallback still succeeds', r.ok, true);
+  }));
+// Browsers and real installed PWAs keep their existing behaviour exactly.
+_reauthChecks.push(runReauth({ provider: 'apple.com', appleBridge: false, preferRedirect: false })
+  .then(function (r) {
+    check('delete reauth: plain browser still uses the popup', r.log.includes('webPopup'), true);
+  }));
+_reauthChecks.push(runReauth({ provider: 'apple.com', appleBridge: false, preferRedirect: true })
+  .then(function (r) {
+    check('delete reauth: installed PWA still uses the redirect', r.log.includes('webRedirect'), true);
+    check('delete reauth: redirect returns false so the caller waits', r.ok, false);
+  }));
+
+
 /* ============================ RESULTS ============================ */
-Promise.all(_deletionChecks.concat(_signOutChecks)).then(function () {
+Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
   process.exit(fail ? 1 : 0);
 }).catch(function (e) {
