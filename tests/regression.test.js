@@ -1068,6 +1068,59 @@ check('export: falls back to a normal download when sharing files is unsupported
   runExport(false).includes('download'), true);
 
 
+
+/* ---- Account switch must blank in-memory state (added 17 Aug 2026, v78) ----
+   Scoping the storage keys was not enough: the in-memory settings object
+   survived an account switch, so account A's first name appeared under
+   account B and was then written up into B's document. Reported by Rachel
+   after v77 shipped. */
+function runSwitch(seq) {
+  const sb = {
+    _lastAuthUid: '',
+    settings: { name: 'Rachel', exportName: 'Rachel G' },
+    projects: [{ id: 1 }, { id: 2 }],
+    groups: [{ id: 9 }]
+  };
+  const run = new Function('sb', 'uid', 'with(sb){' + extractFn('resetStateOnAccountSwitch') +
+    ' return resetStateOnAccountSwitch(uid);}');
+  const results = seq.map(function (uid) { return run(sb, uid); });
+  return { sb: sb, results: results };
+}
+// Guest -> account A: state must SURVIVE (a name typed on the welcome screen,
+// and anything logged before signing in, belongs to the account being created).
+(function () {
+  const r = runSwitch(['UID_A']);
+  check('account switch: guest -> A keeps the name', r.sb.settings.name, 'Rachel');
+  check('account switch: guest -> A keeps local trackers', r.sb.projects.length, 2);
+  check('account switch: guest -> A is not a switch', r.results[0], false);
+})();
+// A -> A (token refresh fires this constantly): must NOT reset.
+(function () {
+  const r = runSwitch(['UID_A', 'UID_A']);
+  check('account switch: same account again does not reset', r.results[1], false);
+  check('account switch: same account keeps state', r.sb.settings.name, 'Rachel');
+})();
+// A -> B: THE BUG. Nothing of A may survive into B.
+(function () {
+  const r = runSwitch(['UID_A', 'UID_B']);
+  check('account switch: A -> B is detected', r.results[1], true);
+  check('account switch: A -> B clears the previous name', r.sb.settings.name, '');
+  check('account switch: A -> B clears the export name', r.sb.settings.exportName, '');
+  check('account switch: A -> B clears trackers', r.sb.projects.length, 0);
+  check('account switch: A -> B clears groups', r.sb.groups.length, 0);
+})();
+// A -> guest -> B (sign out, then sign in as someone else) still counts as A -> B.
+(function () {
+  const r = runSwitch(['UID_A', '', 'UID_B']);
+  check('account switch: signing out in between still resets', r.sb.settings.name, '');
+})();
+// A -> guest -> A (sign out and back in as yourself) must not be treated as a switch.
+(function () {
+  const r = runSwitch(['UID_A', '', 'UID_A']);
+  check('account switch: back to the same account is not a switch', r.results[2], false);
+})();
+
+
 /* ============================ RESULTS ============================ */
 Promise.all(_deletionChecks.concat(_signOutChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
