@@ -843,6 +843,231 @@ _signOutChecks.push(runSignOut({ offline: true }).then(function (r) {
   check('sign-out: offline leaves local data intact', Object.keys(r.local).length, 3);
 }));
 
+
+/* ==================================================================
+   DATA-LOSS GUARDS  (added 17 Aug 2026)
+
+   These exist because of a real incident. On 17 Aug 2026 an account
+   holding 15 trackers and 240 history entries was reduced to an empty
+   projects[] by the app itself: a cleared local cache plus a
+   "cloud looks stale" verdict caused an empty in-memory state to be
+   pushed over a full account. {merge:true} does NOT protect arrays —
+   a whole array field is replaced.
+
+   Every check below encodes one rule that would have prevented it.
+   ================================================================== */
+
+// Pull a METHOD (name(){...}) out of the db object literal and hand it back
+// as a standalone function declaration.
+function extractMethod(name) {
+  const m = new RegExp('(?:^|[\\s,{])' + name + '\\s*\\(\\s*\\)\\s*\\{').exec(src);
+  if (!m) throw new Error('Method not found in index.html: ' + name);
+  let i = src.indexOf('{', m.index + m[0].length - 1);
+  let depth = 0, j = i;
+  while (j < src.length) {
+    const c = src[j];
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; if (depth === 0) { j++; break; } }
+    j++;
+  }
+  return 'function ' + name + '()' + src.slice(i, j);
+}
+
+/* ---- scopedKey: the offline cache must be per account ---- */
+(function () {
+  const run = new Function('sb', 'with(sb){' +
+    extractFn('setCacheScope') + '\n' + extractFn('scopedKey') +
+    '\nreturn {setCacheScope:setCacheScope,scopedKey:scopedKey};}');
+  const sb = { _cacheScope: '' };
+  const api = run(sb);
+  // A signed-out (guest) session keeps the bare legacy key, so guest data
+  // still follows the user into whichever account they sign into.
+  api.setCacheScope('');
+  check('cache scope: guest uses the bare key', api.scopedKey('ledger-app-data'), 'ledger-app-data');
+  // A signed-in account gets its own namespace.
+  api.setCacheScope('UID_A');
+  check('cache scope: account A namespaced', api.scopedKey('ledger-app-data'), 'ledger-app-data::UID_A');
+  api.setCacheScope('UID_B');
+  check('cache scope: account B namespaced', api.scopedKey('ledger-app-data'), 'ledger-app-data::UID_B');
+  // THE BUG THIS PREVENTS: two accounts sharing one cache entry, which is how
+  // an Apple sign-in ended up displaying the Google account's name.
+  api.setCacheScope('UID_A');
+  const a = api.scopedKey('ledger-settings');
+  api.setCacheScope('UID_B');
+  check('cache scope: two accounts never share a settings key', a === api.scopedKey('ledger-settings'), false);
+})();
+
+/* ---- _clearAllLocalData: must also wipe per-account variants ---- */
+(function () {
+  const local = {
+    'tally-projects': 1, 'tally-settings': 1, 'tally-fx': 1,
+    'tally-projects::UID_A': 1, 'tally-settings::UID_A': 1,
+    'tally-projects::UID_B': 1, 'unrelated-key': 1
+  };
+  const sandbox = {
+    LOCAL_KEYS: { a: 'tally-projects' }, SYNCED_KEYS: { b: 'tally-settings' }, FX_KEY: 'tally-fx',
+    projects: [{ id: 1 }], groups: [{ id: 2 }],
+    console: { error: function () {} },
+    localStorage: {
+      removeItem: function (k) { delete local[k]; },
+      get length() { return Object.keys(local).length; },
+      key: function (i) { return Object.keys(local)[i]; }
+    }
+  };
+  const run = new Function('sb', 'with(sb){' + extractFn('_clearAllLocalData') + ' _clearAllLocalData();}');
+  run(sandbox);
+  check('wipe: bare keys removed', local['tally-projects'] === undefined && local['tally-settings'] === undefined, true);
+  check('wipe: account A cache removed', local['tally-projects::UID_A'] === undefined, true);
+  check('wipe: account B cache removed', local['tally-projects::UID_B'] === undefined, true);
+  check('wipe: unrelated keys left alone', local['unrelated-key'], 1);
+})();
+
+/* ---- The empty-write guard ---- */
+function runPush(opts) {
+  const written = [];
+  const sandbox = {
+    firebaseAvailable: true,
+    currentUser: { uid: 'UID_A', isAnonymous: false },
+    _accountDeleting: false,
+    _syncLoadedUid: opts.loadedUid,
+    projects: opts.projects, groups: [], settings: { name: 'Rachel' },
+    syncStatus: '', updateSyncBadge: function () {},
+    console: { error: function () {}, warn: function () {} },
+    Date: Date,
+    firebase: { firestore: { FieldValue: { serverTimestamp: function () { return 'TS'; } } } },
+    firestore: {
+      collection: function () {
+        return { doc: function () {
+          return { set: function (payload) { written.push(payload); return { then: function (f) { f(); return { catch: function () {} }; } }; } };
+        } };
+      }
+    }
+  };
+  const run = new Function('sb', 'with(sb){' + extractMethod('_pushSyncedToFirestore') +
+    '\n_pushSyncedToFirestore.call({setLocalUpdatedAt:function(){}});}');
+  run(sandbox);
+  return written;
+}
+
+// THE INCIDENT, REPRODUCED: memory is empty because the cache was wiped, and
+// the account has not been loaded yet. This write must never leave the device.
+check('empty-write guard: refuses empty projects before the account has loaded',
+  runPush({ projects: [], loadedUid: '' }).length, 0);
+// Same, but the app has loaded a DIFFERENT account — still not authoritative.
+check('empty-write guard: refuses when only another account was loaded',
+  runPush({ projects: [], loadedUid: 'UID_OTHER' }).length, 0);
+// Deleting your last tracker is legitimate — it can only happen after load.
+check('empty-write guard: allows a genuine empty once the account is loaded',
+  runPush({ projects: [], loadedUid: 'UID_A' }).length, 1);
+// Normal saves are never affected.
+check('empty-write guard: normal save still writes',
+  runPush({ projects: [{ id: 1 }], loadedUid: 'UID_A' }).length, 1);
+check('empty-write guard: non-empty save allowed even pre-load',
+  runPush({ projects: [{ id: 1 }], loadedUid: '' }).length, 1);
+
+/* ---- GUARD 2: "cloud is stale" must not become "blank the cloud" ---- */
+function runSnapshot(opts) {
+  const acted = [];
+  let snapCb = null;
+  const sandbox = {
+    syncStatus: '', updateSyncBadge: function () {}, firestoreUnsubscribe: null,
+    isFirestoreLoaded: opts.isFirestoreLoaded !== false,
+    _syncLoadedUid: opts.loadedUid,
+    projects: opts.localProjects, groups: [], settings: {},
+    migrateData: function () {}, startApp: function () {}, refreshCurrentView: function () {},
+    ensureNameFromAccount: function () { return false; },
+    console: { error: function () {}, warn: function () { acted.push('warn'); } },
+    Date: Date,
+    firebase: { firestore: { FieldValue: { serverTimestamp: function () { return 'TS'; } } } },
+    db: {
+      getLocalUpdatedAt: function () { return opts.localStamp; },
+      setLocalUpdatedAt: function () {},
+      loadSyncedFromLocalCache: function () {},
+      applyCloudSnapshot: function () { acted.push('applied'); },
+      saveSettings: function () {},
+      _pushSyncedToFirestore: function () { acted.push('pushed'); }
+    },
+    firestore: {
+      collection: function () {
+        return { doc: function () {
+          return {
+            onSnapshot: function (cb) { snapCb = cb; return function () {}; },
+            set: function () { return { then: function () { return { catch: function () {} }; } }; }
+          };
+        } };
+      }
+    }
+  };
+  const run = new Function('sb', 'with(sb){' + extractFn('startFirestoreSync') +
+    ' startFirestoreSync("UID_A"); return null;}');
+  run(sandbox);
+  snapCb({
+    exists: true,
+    metadata: { hasPendingWrites: false, fromCache: false },
+    data: function () { return { clientUpdatedAt: opts.cloudStamp, projects: opts.cloudProjects, groups: [] }; }
+  });
+  return acted;
+}
+
+// THE EXACT 17 AUG PATH: local stamp is newer (a merge had just stamped it),
+// memory is empty, the account was never loaded, and the cloud holds 15
+// trackers. The old code pushed. It must now apply the cloud copy instead.
+(function () {
+  const acted = runSnapshot({ localStamp: 2000, cloudStamp: 1000, localProjects: [], cloudProjects: new Array(15).fill({ id: 1 }), loadedUid: '' });
+  check('guard 2: does NOT push an unloaded empty state over a full account', acted.includes('pushed'), false);
+  check('guard 2: applies the cloud copy instead', acted.includes('applied'), true);
+})();
+// Even once loaded, empty-over-full is never a legitimate re-push.
+(function () {
+  const acted = runSnapshot({ localStamp: 2000, cloudStamp: 1000, localProjects: [], cloudProjects: [{ id: 1 }], loadedUid: 'UID_A' });
+  check('guard 2: refuses to blank a non-empty account even when loaded', acted.includes('pushed'), false);
+})();
+// The genuine case the guard exists for: we hold real newer work offline.
+(function () {
+  const acted = runSnapshot({ localStamp: 2000, cloudStamp: 1000, localProjects: [{ id: 1 }, { id: 2 }], cloudProjects: [{ id: 1 }], loadedUid: 'UID_A' });
+  check('guard 2: still re-pushes genuinely newer local work', acted.includes('pushed'), true);
+  check('guard 2: and does not apply the stale cloud copy over it', acted.includes('applied'), false);
+})();
+// A fresh cloud snapshot is applied normally and opens the load gate.
+(function () {
+  const acted = runSnapshot({ localStamp: 1000, cloudStamp: 2000, localProjects: [], cloudProjects: [{ id: 1 }], loadedUid: '' });
+  check('guard 2: newer cloud snapshot is applied', acted.includes('applied'), true);
+})();
+
+/* ---- iOS backup export ---- */
+function runExport(canShareFiles) {
+  const log = [];
+  const sandbox = {
+    projects: [{ id: 1 }], groups: [], collapsedGroups: {}, settings: {}, timers: {},
+    Blob: function (parts, o) { this.parts = parts; this.type = o && o.type; },
+    File: function (parts, name, o) { this.name = name; this.type = o && o.type; },
+    Date: Date, JSON: JSON,
+    URL: { createObjectURL: function () { return 'blob:x'; }, revokeObjectURL: function () {} },
+    navigator: canShareFiles ? {
+      canShare: function (d) { return !!(d && d.files); },
+      share: function (d) { log.push('share:' + d.files[0].name); return Promise.resolve(); }
+    } : {},
+    document: {
+      createElement: function () { return { click: function () { log.push('download'); } }; },
+      getElementById: function () { return {}; }
+    },
+    showToast: function (m) { log.push('toast:' + m); }
+  };
+  const run = new Function('sb', 'with(sb){' + extractFn('doBackupExport') + '\n' +
+    extractFn('_downloadBackupFallback') + '\ndoBackupExport();}');
+  run(sandbox);
+  return log;
+}
+// iOS: the share sheet is the only route to "Save to Files".
+check('export: uses the share sheet when files can be shared',
+  runExport(true).some(function (l) { return l.indexOf('share:tally-backup-') === 0; }), true);
+check('export: does not also trigger a dead-end download on iOS',
+  runExport(true).includes('download'), false);
+// Everywhere else: unchanged behaviour.
+check('export: falls back to a normal download when sharing files is unsupported',
+  runExport(false).includes('download'), true);
+
+
 /* ============================ RESULTS ============================ */
 Promise.all(_deletionChecks.concat(_signOutChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
