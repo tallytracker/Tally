@@ -1236,6 +1236,72 @@ _reauthChecks.push(runReauth({ provider: 'apple.com', appleBridge: false, prefer
   }));
 
 
+
+/* ---- The welcome screen must follow the auth state (added 17 Aug 2026) ----
+   Sign in from the welcome screen in the iOS wrapper, see the "Signed in!"
+   toast, and stay on step 1 as if nothing happened. Force-closing and
+   reopening lands on the name step, proving the sign-in worked and only the
+   screen was stale. On the web a redirect reloads the page and everything
+   redraws for free; the native sheets reload nothing. */
+function runWelcomeSync(opts) {
+  const calls = [];
+  const sb = {
+    currentUser: opts.currentUser,
+    welcomeAwaitingName: false,
+    document: {
+      getElementById: function (id) {
+        if (id !== 'welcomeView') return null;
+        if (!opts.welcomeExists) return null;
+        return { classList: { contains: function () { return !!opts.welcomeActive; } } };
+      }
+    },
+    renderWelcome: function () { calls.push('renderWelcome'); }
+  };
+  const run = new Function('sb', 'with(sb){' + extractFn('_syncWelcomeToAuthState') +
+    ' var r=_syncWelcomeToAuthState(' + (opts.passUser ? 'sb.passedUser' : 'undefined') +
+    '); return {r:r,awaiting:welcomeAwaitingName};}');
+  sb.passedUser = opts.passedUser;
+  const out = run(sb);
+  return { returned: out.r, awaiting: out.awaiting, calls: calls };
+}
+const SIGNED_IN = { isAnonymous: false, uid: 'UID_A' };
+const ANON = { isAnonymous: true, uid: 'ANON' };
+
+// THE BUG: signed in, welcome screen on screen, nothing redraws.
+(function () {
+  const r = runWelcomeSync({ currentUser: SIGNED_IN, welcomeExists: true, welcomeActive: true });
+  check('welcome sync: redraws when signed in on the welcome screen', r.calls.includes('renderWelcome'), true);
+  check('welcome sync: holds the name step until the name is confirmed', r.awaiting, true);
+  check('welcome sync: reports that it acted', r.returned, true);
+})();
+// An anonymous session must NOT be pushed onto the name step.
+(function () {
+  const r = runWelcomeSync({ currentUser: ANON, welcomeExists: true, welcomeActive: true });
+  check('welcome sync: anonymous does not trigger the name step', r.awaiting, false);
+  check('welcome sync: anonymous still redraws step 1', r.calls.includes('renderWelcome'), true);
+})();
+// Anywhere other than the welcome screen, it must do nothing at all.
+(function () {
+  const r = runWelcomeSync({ currentUser: SIGNED_IN, welcomeExists: true, welcomeActive: false });
+  check('welcome sync: does nothing when the welcome screen is not showing', r.calls.length, 0);
+  check('welcome sync: reports that it did not act', r.returned, false);
+})();
+(function () {
+  const r = runWelcomeSync({ currentUser: SIGNED_IN, welcomeExists: false });
+  check('welcome sync: safe when the welcome view is absent', r.calls.length, 0);
+})();
+// Every sign-in success path must drive the screen itself rather than relying
+// on the auth observer winning a race it does not control.
+(function () {
+  // Quote-agnostic on purpose: the minifier rewrites single quotes to double,
+  // so a regex hard-coded to ' passes on the readable master and silently
+  // matches nothing on the shipped file (caught 17 Aug 2026).
+  const toasts = (src.match(/showToast\(.(?:Account linked! Your data is now synced\.|Signed in! Data merged\.|Signed in with Apple!|Signed in with Google!).\)/g) || []).length;
+  const driven = (src.match(/_syncWelcomeToAuthState\(\)/g) || []).length;
+  check('welcome sync: every sign-in success point drives the screen', driven >= toasts && toasts > 0, true);
+})();
+
+
 /* ============================ RESULTS ============================ */
 Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
