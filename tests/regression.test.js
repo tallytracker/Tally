@@ -1121,6 +1121,43 @@ function runSwitch(seq) {
 })();
 
 
+
+/* ---- Apple sign-in: the code exchange must name the right flow ----
+   Apple issues a NATIVE authorization code against the app's bundle ID and a
+   WEB code against the Services ID, and the exchange must use the matching
+   client_id. Between 11 and 17 Aug 2026 the client sent no flow at all and the
+   server always assumed web, so every native iOS sign-in failed with
+   "client_id mismatch" and stored no refresh token — meaning account deletion
+   could not revoke the Apple token, which Apple requires. */
+(function () {
+  const sent = [];
+  const sb = {
+    firebase: { functions: function () { return { httpsCallable: function () {
+      return function (payload) { sent.push(payload); return Promise.resolve({}); };
+    } }; } },
+    console: { error: function () {} }
+  };
+  const run = new Function('sb', 'with(sb){' + extractAsyncFn('_storeAppleRefreshToken') +
+    ' return _storeAppleRefreshToken;}');
+  const fn = run(sb);
+  return Promise.all([fn('CODE1', 'native'), fn('CODE2', 'web'), fn('CODE3', undefined)])
+    .then(function () {
+      check('apple exchange: native flow is reported as native', sent[0].flow, 'native');
+      check('apple exchange: web flow is reported as web', sent[1].flow, 'web');
+      check('apple exchange: unknown flow falls back to web', sent[2].flow, 'web');
+      check('apple exchange: the code is still sent', sent[0].code, 'CODE1');
+    });
+})();
+// The native bridge and the Apple JS path must each label themselves, or the
+// server has nothing to go on.
+(function () {
+  const nativeSrc = extractAsyncFn('_appleCredential');
+  const webSrc = extractAsyncFn('_appleCredentialViaAppleJs');
+  check('apple exchange: native credential is labelled', /flow\s*:\s*['"]native['"]/.test(nativeSrc), true);
+  check('apple exchange: web credential is labelled', /flow\s*:\s*['"]web['"]/.test(webSrc), true);
+})();
+
+
 /* ============================ RESULTS ============================ */
 Promise.all(_deletionChecks.concat(_signOutChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
