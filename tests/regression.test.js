@@ -1316,7 +1316,12 @@ function runPushBridge(opts) {
     window: {
       webkit: opts.bridge ? { messageHandlers: {
         'push-token': { postMessage: function () { posted.push('push-token'); setTimeout(function () { fire('push-token', opts.token); }, 0); } },
-        'push-permission-request': { postMessage: function () { posted.push('push-permission-request'); setTimeout(function () { fire('push-permission-result', opts.granted); }, 0); } }
+        // Mirrors returnPermissionResult() in PushNotifications.swift: it replies
+        // on 'push-permission-request' (the same name it was posted to) with the
+        // string 'granted' or 'denied'. Corrected 17 Aug 2026 — the earlier mock
+        // encoded a guessed contract, so it happily passed against code that
+        // could never work on a real device.
+        'push-permission-request': { postMessage: function () { posted.push('push-permission-request'); setTimeout(function () { fire('push-permission-request', opts.granted); }, 0); } }
       } } : undefined,
       addEventListener: function (n, f) { (listeners[n] = listeners[n] || []).push(f); },
       removeEventListener: function (n, f) { listeners[n] = (listeners[n] || []).filter(function (x) { return x !== f; }); }
@@ -1353,13 +1358,13 @@ const _pushChecks = [];
 })();
 // Permission result is relayed faithfully.
 (function () {
-  const r = runPushBridge({ bridge: true, granted: 'true' });
+  const r = runPushBridge({ bridge: true, granted: 'granted' });
   _pushChecks.push(r.api.perm().then(function (g) {
     check('ios push: permission granted is relayed', g, true);
   }));
 })();
 (function () {
-  const r = runPushBridge({ bridge: true, granted: 'false' });
+  const r = runPushBridge({ bridge: true, granted: 'denied' });
   _pushChecks.push(r.api.perm().then(function (g) {
     check('ios push: permission refused is relayed', g, false);
   }));
@@ -1448,6 +1453,66 @@ _pushChecks.push(runNativeState('denied').then(function (r) {
 _pushChecks.push(runNativeState('notDetermined').then(function (r) {
   check('reminders ui: relays notDetermined', r.state, 'notDetermined');
 }));
+
+
+
+/* ---- The permission event name must match the Swift (added 17 Aug 2026) ----
+   v83 GUESSED that the wrapper replies on 'push-permission-result'. It does
+   not. returnPermissionResult() in PushNotifications.swift dispatches
+   'push-permission-request' — the SAME name as the handler we post to — with
+   detail 'granted' or 'denied'. So the listener never fired, tapping the
+   toggle did nothing for two minutes and then silently timed out. Read the
+   Swift; do not infer the contract. */
+(function () {
+  const src6 = extractFn('_nativePushPermission');
+  check('push permission: listens on the name the Swift actually dispatches',
+    /addEventListener\(\s*['"]push-permission-request['"]/.test(src6), true);
+  check('push permission: does not listen on the guessed name',
+    /['"]push-permission-result['"]/.test(src6), false);
+  check('push permission: compares against the string granted',
+    /===\s*['"]granted['"]|['"]granted['"]\s*===/.test(src6), true);
+})();
+// End to end through a mock of the real Swift contract.
+function runRealPermission(detail) {
+  const listeners = {};
+  const sb = {
+    window: {
+      webkit: { messageHandlers: { 'push-permission-request': { postMessage: function () {
+        setTimeout(function () { (listeners['push-permission-request'] || []).slice().forEach(function (f) { f({ detail: detail }); }); }, 0);
+      } } } },
+      addEventListener: function (n, f) { (listeners[n] = listeners[n] || []).push(f); },
+      removeEventListener: function (n, f) { listeners[n] = (listeners[n] || []).filter(function (x) { return x !== f; }); }
+    },
+    setTimeout: setTimeout, clearTimeout: clearTimeout
+  };
+  return new Function('sb', 'with(sb){' + extractFn('_nativePushPermission') + ' return _nativePushPermission;}')(sb)();
+}
+_pushChecks.push(runRealPermission('granted').then(function (g) {
+  check('push permission: granted resolves true', g, true);
+}));
+_pushChecks.push(runRealPermission('denied').then(function (g) {
+  check('push permission: denied resolves false', g, false);
+}));
+
+/* ---- Reminder timing copy must not lie (added 17 Aug 2026) ----
+   Settings said flatly "Get an evening reminder (around 9pm)". That is only
+   true for an activity with NO reminder time; every activity that has one is
+   reminded at ITS OWN time. Someone whose pilates reminder was set to 1pm was
+   being told it would arrive at 9pm. */
+function runTimingCopy(list) {
+  return new Function('sb', 'with(sb){' + extractFn('_reminderTimingCopy') +
+    ' return _reminderTimingCopy();}')({ scheduledActivities: function () { return list; } });
+}
+(function () {
+  const allTimed = runTimingCopy([{ name: 'Pilates', time: '13:00' }, { name: 'Cello', time: '18:30' }]);
+  check('reminder copy: never claims 9pm when every activity has a time', /9pm/.test(allTimed), false);
+  check('reminder copy: says the time is per activity', /time you set on it/.test(allTimed), true);
+  const noneTimed = runTimingCopy([{ name: 'Pilates', time: '' }]);
+  check('reminder copy: mentions the 9pm fallback when nothing has a time', /9pm/.test(noneTimed), true);
+  const mixed = runTimingCopy([{ name: 'Pilates', time: '13:00' }, { name: 'Cello', time: '' }]);
+  check('reminder copy: mixed case explains both', /time you set on it/.test(mixed) && /9pm/.test(mixed), true);
+  check('reminder copy: mixed case counts the untimed ones', /1 of yours has no time/.test(mixed), true);
+})();
 
 
 /* ============================ RESULTS ============================ */
