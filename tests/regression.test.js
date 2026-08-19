@@ -1392,6 +1392,64 @@ const _pushChecks = [];
 })();
 
 
+
+/* ---- The reminders UI must be reachable on iOS (added 17 Aug 2026) ----
+   v82 fixed enableReminders() but NOT renderNotifSettings(), which gated the
+   whole section on ('Notification' in window). Inside the wrapper that is
+   false, so the user only ever saw "Your browser doesn't support
+   notifications… add it to your home screen" and could never reach the
+   toggle. Fixing the function while leaving the gate shut achieved nothing —
+   reported on device immediately after v82 shipped. */
+(function () {
+  const src3 = extractFn('renderNotifSettings');
+  const bridgeAt = src3.indexOf('_hasNativePushBridge');
+  const supportedMatch = /["']Notification["']\s*in\s*window/.exec(src3);
+  const supportedAt = supportedMatch ? supportedMatch.index : -1;
+  check('reminders ui: renderNotifSettings knows about the native bridge', bridgeAt > -1, true);
+  check('reminders ui: the bridge check precedes the browser-support check', bridgeAt > -1 && supportedAt > -1 && bridgeAt < supportedAt, true);
+})();
+// The save-time nudge must not be silently suppressed on iOS either.
+(function () {
+  const src4 = extractFn('maybePromptEnableReminders');
+  check('reminders ui: the save-time nudge knows about the native bridge', src4.indexOf('_hasNativePushBridge') > -1, true);
+})();
+// The native renderer must offer an actual toggle wired to enableReminders.
+(function () {
+  const src5 = extractFn('_renderNotifSettingsNative');
+  check('reminders ui: native path renders a toggle', /toggle-switch/.test(src5), true);
+  check('reminders ui: native toggle can turn reminders on', /enableReminders\(\)/.test(src5), true);
+  check('reminders ui: native toggle can turn reminders off', /disableReminders\(\)/.test(src5), true);
+})();
+// Permission state is read from the wrapper, and only 'denied' hides the toggle.
+function runNativeState(state) {
+  const posted = [];
+  const listeners = {};
+  const sb = {
+    window: {
+      webkit: { messageHandlers: { 'push-permission-state': { postMessage: function () {
+        posted.push('push-permission-state');
+        setTimeout(function () { (listeners['push-permission-state'] || []).slice().forEach(function (f) { f({ detail: state }); }); }, 0);
+      } } } },
+      addEventListener: function (n, f) { (listeners[n] = listeners[n] || []).push(f); },
+      removeEventListener: function (n, f) { listeners[n] = (listeners[n] || []).filter(function (x) { return x !== f; }); }
+    },
+    setTimeout: setTimeout, clearTimeout: clearTimeout
+  };
+  const run = new Function('sb', 'with(sb){' + extractFn('_nativePushState') + ' return _nativePushState;}');
+  return run(sb)().then(function (s) { return { state: s, posted: posted }; });
+}
+_pushChecks.push(runNativeState('authorized').then(function (r) {
+  check('reminders ui: asks iOS for the permission state', r.posted.includes('push-permission-state'), true);
+  check('reminders ui: relays authorized', r.state, 'authorized');
+}));
+_pushChecks.push(runNativeState('denied').then(function (r) {
+  check('reminders ui: relays denied', r.state, 'denied');
+}));
+_pushChecks.push(runNativeState('notDetermined').then(function (r) {
+  check('reminders ui: relays notDetermined', r.state, 'notDetermined');
+}));
+
+
 /* ============================ RESULTS ============================ */
 Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks).concat(_pushChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
