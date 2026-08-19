@@ -1302,8 +1302,98 @@ const ANON = { isAnonymous: true, uid: 'ANON' };
 })();
 
 
+
+/* ---- iOS push must take the native route (added 17 Aug 2026) ----
+   registerPushAndSchedule() used messaging.getToken() — the WEB PUSH API.
+   iOS exposes Web Notifications only to PWAs installed from Safari, never
+   inside the WKWebView that hosts the App Store app, so the old path failed
+   at its first guard and NO token was ever obtained. Push has therefore never
+   worked on iPhone. The wrapper's native bridge was complete but unused. */
+function runPushBridge(opts) {
+  const posted = [];
+  const listeners = {};
+  const sb = {
+    window: {
+      webkit: opts.bridge ? { messageHandlers: {
+        'push-token': { postMessage: function () { posted.push('push-token'); setTimeout(function () { fire('push-token', opts.token); }, 0); } },
+        'push-permission-request': { postMessage: function () { posted.push('push-permission-request'); setTimeout(function () { fire('push-permission-result', opts.granted); }, 0); } }
+      } } : undefined,
+      addEventListener: function (n, f) { (listeners[n] = listeners[n] || []).push(f); },
+      removeEventListener: function (n, f) { listeners[n] = (listeners[n] || []).filter(function (x) { return x !== f; }); }
+    },
+    setTimeout: setTimeout, clearTimeout: clearTimeout
+  };
+  function fire(name, detail) { (listeners[name] || []).slice().forEach(function (f) { f({ detail: detail }); }); }
+  const run = new Function('sb', 'with(sb){' +
+    extractFn('_hasNativePushBridge') + '\n' + extractFn('_nativePushToken') + '\n' + extractFn('_nativePushPermission') +
+    ' return {has:_hasNativePushBridge,token:_nativePushToken,perm:_nativePushPermission};}');
+  const api = run(sb);
+  return { api: api, posted: posted };
+}
+// Detection: only inside the wrapper.
+check('ios push: bridge detected in the wrapper', runPushBridge({ bridge: true }).api.has(), true);
+check('ios push: no bridge in a plain browser', runPushBridge({ bridge: false }).api.has(), false);
+
+const _pushChecks = [];
+// The token comes back through the CustomEvent the wrapper dispatches.
+(function () {
+  const r = runPushBridge({ bridge: true, token: 'APNS_FCM_TOKEN' });
+  _pushChecks.push(r.api.token().then(function (t) {
+    check('ios push: asks the wrapper for a token', r.posted.includes('push-token'), true);
+    check('ios push: resolves the token', t, 'APNS_FCM_TOKEN');
+  }));
+})();
+// PushNotifications.swift sends this literal string when it fails — it is not
+// a token and must never be stored as one.
+(function () {
+  const r = runPushBridge({ bridge: true, token: 'ERROR GET TOKEN' });
+  _pushChecks.push(r.api.token().then(function (t) {
+    check('ios push: the failure sentinel is not treated as a token', t, '');
+  }));
+})();
+// Permission result is relayed faithfully.
+(function () {
+  const r = runPushBridge({ bridge: true, granted: 'true' });
+  _pushChecks.push(r.api.perm().then(function (g) {
+    check('ios push: permission granted is relayed', g, true);
+  }));
+})();
+(function () {
+  const r = runPushBridge({ bridge: true, granted: 'false' });
+  _pushChecks.push(r.api.perm().then(function (g) {
+    check('ios push: permission refused is relayed', g, false);
+  }));
+})();
+// Both write paths must state tokenType explicitly. The reminders document is
+// merged, so an absent tag would let a user who registered on iOS keep a stale
+// 'apns' value after later signing in on the web — and be sent a payload shape
+// their browser cannot render.
+(function () {
+  const nativeSrc = extractFn('_enableRemindersNative');
+  const refreshSrc = extractAsyncFn('registerPushAndSchedule');
+  check('ios push: native path tags the token apns', /tokenType\s*:\s*['"]apns['"]/.test(nativeSrc), true);
+  check('ios push: launch refresh tags the token apns', /tokenType\s*:\s*['"]apns['"]/.test(refreshSrc), true);
+  check('ios push: web path tags the token web', /tokenType\s*:\s*['"]web['"]/.test(refreshSrc), true);
+})();
+// enableReminders() must branch BEFORE the 'Notification' guard, which is the
+// exact line iOS fails on.
+(function () {
+  const src2 = extractAsyncFn('enableReminders');
+  const bridgeAt = src2.indexOf('_hasNativePushBridge');
+  // Quote- AND whitespace-agnostic. The minifier rewrites
+  //   'Notification' in window   ->   "Notification"in window
+  // so a literal match passes on the readable master and silently matches
+  // nothing on the shipped file. Second time this exact trap was hit today
+  // (see the sign-in toast check above) — assert on shape, not on spelling.
+  const guardMatch = /["']Notification["']\s*in\s*window/.exec(src2);
+  const guardAt = guardMatch ? guardMatch.index : -1;
+  check('ios push: the Notification guard is still present', guardAt > -1, true);
+  check('ios push: the native branch precedes the Notification guard', bridgeAt > -1 && bridgeAt < guardAt, true);
+})();
+
+
 /* ============================ RESULTS ============================ */
-Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks)).then(function () {
+Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks).concat(_pushChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
   process.exit(fail ? 1 : 0);
 }).catch(function (e) {
