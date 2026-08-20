@@ -1408,6 +1408,31 @@ const _pushChecks = [];
   check('push: the map is keyed by the token variable, not a fixed name',
     /tokens\s*:\s*\{\s*\[\s*[A-Za-z_$][\w$]*\s*\]\s*:/.test(nativeSrc), true);
 })();
+/* THE DOUBLE-READ — 20 Aug 2026.
+   enableReminders() awaits Notification.requestPermission(), gets 'granted',
+   and tells the user "Reminders enabled". registerPushAndSchedule() then
+   re-read the Notification.permission GLOBAL and bailed, because on Samsung
+   Internet that global still reads 'default' after a successful grant. Android
+   push was dead for weeks and the only symptom was a toast blaming "this
+   browser".
+
+   Two things are pinned. The caller must pass what it just learned, and the
+   guard must yield to it. The guard itself STAYS for the no-arg launch call —
+   there, nobody has just asked, so the global is the only source and the
+   18 Jul protection against getToken popping its own prompt still matters.
+   Both patterns are minifier-proof: `true` becomes `!0`, and the parameter
+   name is mangled to a single letter, so neither is matched literally. */
+(function () {
+  const enableSrc = extractAsyncFn('enableReminders');
+  const refreshSrc = extractAsyncFn('registerPushAndSchedule');
+  check('push: enableReminders vouches for the permission it just obtained',
+    /registerPushAndSchedule\s*\(\s*(?:true|!0)\s*\)/.test(enableSrc), true);
+  // An `&&` before the Notification-in-window test means that test is no
+  // longer the FIRST condition — i.e. something gates it. If the guard is ever
+  // reverted to reading the global unconditionally, this goes back to false.
+  check('push: the permission guard yields to a vouching caller',
+    /&&\s*\(?\s*!\s*\(?\s*["']Notification["']\s*in\s*window/.test(refreshSrc), true);
+})();
 // enableReminders() must branch BEFORE the 'Notification' guard, which is the
 // exact line iOS fails on.
 (function () {
