@@ -1380,6 +1380,34 @@ const _pushChecks = [];
   check('ios push: launch refresh tags the token apns', /tokenType\s*:\s*['"]apns['"]/.test(refreshSrc), true);
   check('ios push: web path tags the token web', /tokenType\s*:\s*['"]web['"]/.test(refreshSrc), true);
 })();
+/* ONE ENTRY PER DEVICE — 20 Aug 2026.
+   `reminders/{uid}.token` was ONE SLOT FOR THE WHOLE ACCOUNT, and both paths
+   below write it on launch, so opening Tally on the iPhone unregistered the
+   Android phone and vice versa. Only the last-opened device could ever be
+   notified — which is why Android looked like it "regressed" in August when in
+   fact it had been evicted by the first iPhone launch.
+
+   This is precisely the class of bug that hides for weeks, because it is
+   INVISIBLE ON ONE DEVICE: a single test phone passes every manual check. So
+   it gets pinned here. Every write site must carry a `tokens` map keyed by the
+   token itself. */
+(function () {
+  const nativeSrc = extractFn('_enableRemindersNative');
+  const refreshSrc = extractAsyncFn('registerPushAndSchedule');
+  // Quote- and whitespace-agnostic: the minifier rewrites both.
+  const perDevice = /tokens\s*:\s*\{\s*\[/;
+  check('push: native enable writes a per-device tokens map', perDevice.test(nativeSrc), true);
+  // registerPushAndSchedule holds BOTH the apns launch-refresh and the web
+  // path, so it must contain two of them, not one.
+  check('push: launch refresh and web path both write a tokens map',
+    (refreshSrc.match(/tokens\s*:\s*\{\s*\[/g) || []).length, 2);
+  // The map must be keyed BY THE TOKEN. A fixed key such as tokens:{apns:...}
+  // would reintroduce one slot per platform — better than one per account but
+  // still wrong for two Android phones, and it would pass the check above.
+  // The variable name is not pinned: the minifier renames locals.
+  check('push: the map is keyed by the token variable, not a fixed name',
+    /tokens\s*:\s*\{\s*\[\s*[A-Za-z_$][\w$]*\s*\]\s*:/.test(nativeSrc), true);
+})();
 // enableReminders() must branch BEFORE the 'Notification' guard, which is the
 // exact line iOS fails on.
 (function () {
