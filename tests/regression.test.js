@@ -1433,6 +1433,34 @@ const _pushChecks = [];
   check('push: the permission guard yields to a vouching caller',
     /&&\s*\(?\s*!\s*\(?\s*["']Notification["']\s*in\s*window/.test(refreshSrc), true);
 })();
+/* pushHelp — the failure message must name the switch to flip (20 Aug 2026).
+   A blocked origin is recoverable in two taps, but only if the app says where.
+   The old text blamed "this browser" for every cause alike, which sent Rachel
+   looking at her phone for a fault that was one setting. */
+(function () {
+  const fn = new Function('return ' + extractFn('pushHelp'))();
+  const blocked = fn('messaging/permission-blocked: Messaging: The notification permission was not granted and blocked instead.');
+  check('pushHelp: a blocked origin says it is blocked', /blocked/i.test(blocked), true);
+  check('pushHelp: ...and points at the permission setting', /Allow/.test(blocked), true);
+  // The old copy told a blocked user to install the app. That does not fix a
+  // blocked ORIGIN, and sending them to the store is a dead end.
+  check('pushHelp: ...and does NOT send them to the app store', /Google Play|App Store/.test(blocked), false);
+
+  const dflt = fn('permission is default');
+  check('pushHelp: never-asked also points at the setting', /Allow/.test(dflt), true);
+
+  const unsup = fn('unsupported browser');
+  check('pushHelp: a browser with no web push IS told to install the app',
+    /Google Play|App Store/.test(unsup), true);
+
+  // Anything unrecognised must still carry the raw reason through. Losing it is
+  // what made this class of bug invisible for three weeks.
+  const odd = fn('messaging/some-future-code');
+  check('pushHelp: an unknown reason is still reported verbatim',
+    odd.indexOf('messaging/some-future-code') > -1, true);
+  check('pushHelp: no reason at all degrades to plain advice',
+    fn('').indexOf('[reason:') === -1, true);
+})();
 // enableReminders() must branch BEFORE the 'Notification' guard, which is the
 // exact line iOS fails on.
 (function () {
