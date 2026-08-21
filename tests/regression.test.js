@@ -1074,12 +1074,25 @@ check('export: falls back to a normal download when sharing files is unsupported
    survived an account switch, so account A's first name appeared under
    account B and was then written up into B's document. Reported by Rachel
    after v77 shipped. */
-function runSwitch(seq) {
+function runSwitch(seq, startUid) {
   const sb = {
-    _lastAuthUid: '',
+    // `startUid` simulates the value RESTORED FROM STORAGE at launch — see the
+    // cold-start test below. Defaults to '' (a device that has never signed in).
+    _lastAuthUid: startUid || '',
     settings: { name: 'Rachel', exportName: 'Rachel G' },
     projects: [{ id: 1 }, { id: 2 }],
-    groups: [{ id: 9 }]
+    groups: [{ id: 9 }],
+    // Real dependencies, stubbed so they can be OBSERVED rather than worked
+    // around. resetStateOnAccountSwitch persists the uid and drops the guest
+    // cache; both are part of the contract now, so both get asserted.
+    guestCacheCleared: 0,
+    clearGuestCache: function () { this.guestCacheCleared++; },
+    stored: {},
+    LAST_AUTH_UID_KEY: 'tally.lastAuthUid',
+    localStorage: {
+      setItem: function (k, v) { sb.stored[k] = v; },
+      getItem: function (k) { return Object.prototype.hasOwnProperty.call(sb.stored, k) ? sb.stored[k] : null; }
+    }
   };
   const run = new Function('sb', 'uid', 'with(sb){' + extractFn('resetStateOnAccountSwitch') +
     ' return resetStateOnAccountSwitch(uid);}');
@@ -1113,6 +1126,49 @@ function runSwitch(seq) {
 (function () {
   const r = runSwitch(['UID_A', '', 'UID_B']);
   check('account switch: signing out in between still resets', r.sb.settings.name, '');
+})();
+/* ---- THE SWITCH THAT SPANNED A RESTART (Rachel, 21 Aug 2026) ----
+   The v78 fix above was right about WHAT to blank and wrong about how long to
+   remember. `_lastAuthUid` lived only in memory, so it was '' on every cold
+   start and this sequence slipped straight past it:
+
+       sign out of A  ->  CLOSE THE APP  ->  reopen  ->  sign in as B
+
+   With no remembered uid, B looked like a first-ever sign-in, nothing was
+   blanked, and A's first name rode the guest cache into B's cloud document —
+   after which it came back on every future sign-in, because by then the
+   snapshot legitimately carried it. Rachel reported exactly this, twice.
+
+   The uid is now persisted, so a relaunch cannot erase the fact of the switch. */
+(function () {
+  // A cold start where storage remembers A, then a sign-in as B.
+  const r = runSwitch(['UID_B'], 'UID_A');
+  check('account switch: a switch across an app restart is still detected', r.results[0], true);
+  check('account switch: ...and the old name does not survive it', r.sb.settings.name, '');
+  check('account switch: ...and neither do the old trackers', r.sb.projects.length, 0);
+})();
+// The same cold start, signing back in as YOURSELF, must stay untouched —
+// otherwise every relaunch would wipe the user's own name.
+(function () {
+  const r = runSwitch(['UID_A'], 'UID_A');
+  check('account switch: relaunching into the SAME account is not a switch', r.results[0], false);
+  check('account switch: ...and keeps the name', r.sb.settings.name, 'Rachel');
+})();
+/* The uid has to reach storage, or the next cold start is blind again. */
+(function () {
+  const r = runSwitch(['UID_A']);
+  check('account switch: the uid is persisted for the next launch',
+    r.sb.stored['tally.lastAuthUid'], 'UID_A');
+})();
+/* The unscoped GUEST cache can still hold the previous account's settings and
+   is read on any later anonymous hydration — which would undo the reset. It is
+   dropped on a real switch, and ONLY on a real switch: a guest signing in for
+   the first time is carrying data that legitimately belongs to the new account. */
+(function () {
+  const sw = runSwitch(['UID_A', 'UID_B']);
+  check('account switch: A -> B drops the guest cache', sw.sb.guestCacheCleared, 1);
+  const first = runSwitch(['UID_A']);
+  check('account switch: guest -> A KEEPS the guest cache', first.sb.guestCacheCleared, 0);
 })();
 // A -> guest -> A (sign out and back in as yourself) must not be treated as a switch.
 (function () {
