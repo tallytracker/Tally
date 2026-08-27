@@ -98,6 +98,7 @@ const code = [
   extractFn('currencyGroups'),
   extractFn('isPay'),
   extractFn('myName'),
+  extractFn('hasOther'),
   extractFn('otherName'),
   extractFn('payerName'),
   extractFn('receiverName'),
@@ -1649,6 +1650,88 @@ function runTimingCopy(list) {
   const mixed = runTimingCopy([{ name: 'Pilates', time: '13:00' }, { name: 'Cello', time: '' }]);
   check('reminder copy: mixed case explains both', /time you set on it/.test(mixed) && /9pm/.test(mixed), true);
   check('reminder copy: mixed case counts the untimed ones', /1 of yours has no time/.test(mixed), true);
+})();
+
+
+/* ---- Counterparty is optional on PROJECTS, mandatory on ACTIVITIES
+        (added 27 Aug 2026) ----------------------------------------------
+   The project form used to refuse to save a solo project without a name for
+   "the other side". A trip, a house move or a wedding is paid to many
+   vendors and has no single counterparty, so that guard blocked those
+   projects outright. Activities keep the requirement: their whole balance
+   sentence ("Rita to pay You") is built from the name and there is nothing
+   sensible to print in its place.
+   These checks pin BOTH halves — the one that was loosened and the one that
+   must not be. */
+section('Counterparty optional on projects, required on activities');
+
+check('hasOther: named counterparty', hasOther({ counterparty: 'Joe' }), true);
+check('hasOther: blank counterparty', hasOther({ counterparty: '' }), false);
+check('hasOther: field absent', hasOther({ type: 'project', name: 'Rome trip' }), false);
+check('hasOther: null item', hasOther(null), false);
+
+// An unnamed PROJECT must never borrow its own name for a sentence — "Payment
+// from Rome Trip" and "Between Rachel and Rome Trip" both read as nonsense.
+check('unnamed pay project → neutral role word',
+  otherName({ type: 'project', direction: 'pay', name: 'Rome trip' }), 'Provider');
+check('unnamed earn project → neutral role word',
+  otherName({ type: 'project', direction: 'earn', name: 'Logo job' }), 'Client');
+check('named project still uses the name',
+  otherName({ type: 'project', direction: 'pay', name: 'Kitchen', counterparty: 'Joe' }), 'Joe');
+// Activities are unchanged: they always have a counterparty, and the old
+// name fallback stays as the last line of defence for legacy data.
+check('activity keeps its name fallback',
+  otherName({ direction: 'pay', name: 'Pilates' }), 'Pilates');
+check('activity with counterparty unchanged',
+  otherName({ direction: 'pay', name: 'Pilates', counterparty: 'Rita' }), 'Rita');
+
+// Source-level guards. Quote-agnostic on purpose: the minifier rewrites single
+// quotes to double, so a regex hard-coded to ' passes on the readable master
+// and matches nothing on the shipped file.
+(function () {
+  // Match on the TOAST STRINGS, not on local variable names: the minifier
+  // renames locals (`counterparty` -> `o`), so a name-based regex passes on
+  // the readable master and matches nothing on the shipped file. String
+  // literals survive both.
+  const projSave = extractFn('saveProjectForm');
+  check('project form no longer refuses a blank counterparty',
+    /enter who is on the other side/.test(projSave), false);
+  check('project form still requires a name',
+    /Please enter a name/.test(projSave), true);
+  const actSave = extractFn('saveProject');   // legacy name: this is the ACTIVITY form
+  check('activity form still refuses a blank counterparty',
+    /enter who is on the other side/.test(actSave), true);
+})();
+
+// The solo-project WhatsApp summary must DROP the "Between X and Y" clause
+// when there is no counterparty, not print a stand-in for it.
+(function () {
+  const share = extractFn('showShareSummary');
+  check('share: the Between clause is guarded by hasOther',
+    /hasOther\(p\)\)\s*\w+\+=.Between /.test(share), true);
+  check('share: the paid line has an unnamed fallback',
+    /hasOther\(p\)\?[^;]*Total spent/.test(share), true);
+})();
+
+// A received project payment must not default its note to "Payment from
+// <project name>" when nobody is named.
+(function () {
+  const pay = extractFn('confirmProjectPay');
+  check('project pay note falls back to a neutral phrase',
+    /hasOther\(p\)\?[^;]*Payment received/.test(pay), true);
+})();
+
+/* ---- Category examples cover trips as well as builds (27 Aug 2026) ----
+   The Categorize-expenses explainer only ever named building-site
+   categories, which reads as a closed list to someone tracking a trip. */
+(function () {
+  const hint = extractFn('showCategorizeHint');
+  check('category examples: build categories present',
+    /Materials/.test(hint) && /Woodwork/.test(hint) && /Appliances/.test(hint), true);
+  check('category examples: trip categories present',
+    /Flights/.test(hint) && /Hotels/.test(hint) && /Meals/.test(hint) && /Transport/.test(hint), true);
+  check('category examples: Utilities dropped', /Utilities/.test(hint), false);
+  check('category examples: Cleaning dropped', /Cleaning/.test(hint), false);
 })();
 
 
