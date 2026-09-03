@@ -1829,7 +1829,26 @@ section('Reminder copy says it is a nudge to log, not to attend');
   check('the delivered notification itself asks you to log or skip',
     sw.indexOf('Tap to log it, or mark it skipped.') > -1, true);
   check('...and only when the server copy has not already said so',
-    sw.indexOf('log it|log the|record|skipped') > -1, true);
+    sw.indexOf('log it|log or skip|log the|record|skipped') > -1, true);
+  // The backend's own single-activity body is "Open Tally to log or skip it."
+  // If the guard does not recognise that phrasing the two stack up into a
+  // duplicate sentence on the handset. Simulate the real payload.
+  (function () {
+    const guard = /log it|log or skip|log the|record|skipped/i;
+    check('the real server body is left alone, not doubled',
+      guard.test('Open Tally to log or skip it.'), true);
+    check('a bare list of activity names still gets the ask',
+      guard.test('Pilates, Tennis, Guitar'), false);
+    const t = s => s.replace(/^Session today:/i, "Log today's session:")
+                    .replace(/^(\d+) sessions scheduled today$/i, '$1 sessions to log today');
+    check('the attendance-sounding title is rewritten',
+      t('Session today: Pilates'), "Log today's session: Pilates");
+    check('the plural title is rewritten too',
+      t('3 sessions scheduled today'), '3 sessions to log today');
+    check('an unrelated title is untouched', t('Tally'), 'Tally');
+  })();
+  check('the service worker rewrites the title, not just the body',
+    sw.indexOf("Log today's session:") > -1, true);
 })();
 
 /* ---- A shared link works whatever phone the recipient has (3 Sep 2026) ----
