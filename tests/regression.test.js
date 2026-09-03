@@ -1735,6 +1735,135 @@ check('activity with counterparty unchanged',
 })();
 
 
+
+/* ---- A settled group trip still knows what the trip cost (3 Sep 2026) ----
+   "Settle All & Reset" settles the BALANCES; it does not un-spend the money.
+   Every dashboard figure was scoped to entries since the last settlement, so a
+   fully settled trip reported Total Expenses 0 and an empty category chart.
+   dashHist() splits the two windows: whole trip for a group, current round for
+   a 1-on-1 tracker (where a balance is the only thing a total can mean). */
+section('Settled group trip still reports what the trip cost');
+(function () {
+  const dashHist = new Function('getEntriesSinceLastSettlement',
+    extractFn('dashHist') + '; return dashHist;')(getEntriesSinceLastSettlement);
+  const hasSettlement = new Function(extractFn('hasSettlement') + '; return hasSettlement;')();
+  const sum = h => h.filter(x => x.type === 'charge').reduce((s, x) => s + x.amount, 0);
+
+  const trip = {
+    participants: ['Rachel', 'Sam'],
+    history: [
+      { id: 's1', type: 'settlement', amount: 20, date: '2026-08-10T10:00:00.000Z' },
+      { id: 'e2', type: 'charge', amount: 40, paidBy: 'Sam',    date: '2026-08-09T10:00:00.000Z' },
+      { id: 'e1', type: 'charge', amount: 80, paidBy: 'Rachel', date: '2026-08-08T10:00:00.000Z' }
+    ]
+  };
+
+  check('group: the settle-up really does empty the current round',
+    sum(getEntriesSinceLastSettlement(trip)), 0);
+  check('group: but the dashboard still sees the whole trip', sum(dashHist(trip)), 120);
+  check('1-on-1 tracker: unchanged — still the current round only',
+    sum(dashHist({ history: trip.history })), 0);
+  check('an unsettled trip: both windows agree', sum(dashHist({
+    participants: ['A', 'B'],
+    history: [{ id: 'x', type: 'charge', amount: 25, date: '2026-08-01T00:00:00.000Z' }]
+  })), 25);
+  check('hasSettlement: true once settled', hasSettlement(trip), true);
+  check('hasSettlement: false before any settle-up',
+    hasSettlement({ history: [{ type: 'charge' }] }), false);
+  check('the dashboard shows what is still owed as its own figure',
+    /Outstanding<\/div>/.test(src), true);
+  check('each person can see their own trip total', /Own share/.test(src), true);
+})();
+
+/* ---- The orange settlement line can now be removed (3 Sep 2026) ----
+   Reported by Rachel: a settlement's figures could be reversed but the orange
+   divider it left in the history log could not — the row had no tap target in
+   any of the three detail views. Deleting one removes the whole batch, because
+   Settle All & Reset writes one line per transfer and
+   getEntriesSinceLastSettlement stops at the FIRST it finds. */
+section('The orange settlement line can be deleted from the history log');
+(function () {
+  const settlementBatchIds = new Function(
+    extractFn('settlementBatchIds') + '; return settlementBatchIds;')();
+  const hist = [
+    { id: 'a', type: 'settlement', amount: 30, date: '2026-08-10T10:00:00.000Z' },
+    { id: 'b', type: 'settlement', amount: 20, date: '2026-08-10T10:00:00.000Z' },
+    { id: 'c', type: 'charge',     amount: 50, date: '2026-08-09T10:00:00.000Z' },
+    { id: 'd', type: 'settlement', amount: 10, date: '2026-05-01T10:00:00.000Z' }
+  ];
+  const p = { history: hist.slice() };
+  check('one settle-up is one batch, however many lines it wrote',
+    settlementBatchIds(p, 'a').sort().join(','), 'a,b');
+  check('an older settle-up is a separate batch', settlementBatchIds(p, 'd').join(','), 'd');
+  check('an expense is not a settlement', settlementBatchIds(p, 'c').length, 0);
+  check('an unknown id is harmless', settlementBatchIds(p, 'zz').length, 0);
+
+  const p2 = { history: hist.slice() };
+  removeEntriesByIds(p2, settlementBatchIds(p2, 'a'));
+  check('deleting it removes every orange line that settle-up drew',
+    p2.history.filter(h => h.type === 'settlement' && h.date === '2026-08-10T10:00:00.000Z').length, 0);
+  check('deleting it re-opens the round',
+    getEntriesSinceLastSettlement(p2).filter(h => h.type === 'charge').length, 1);
+  check('the settlement row is tappable in all three detail views',
+    (src.split("showSettlementActions('").length - 1) >= 3, true);
+})();
+
+/* ---- The reminder says what it is FOR (real user feedback, 3 Sep 2026) ----
+   A user read the session reminder as a reminder to GO to the session. It is a
+   reminder to RECORD it (or mark it skipped). Say so where the reminder is set
+   up, and again in the notification that arrives. */
+section('Reminder copy says it is a nudge to log, not to attend');
+(function () {
+  check('the activity form spells it out where the reminder is set up',
+    /reminds you to LOG the session/.test(src) && /never tells you to go/.test(src), true);
+  check('the vague old hint is gone',
+    /The app will prompt you on those days\./.test(src), false);
+  check('the save-time nudge says log or skip',
+    /to log the session or mark it skipped/.test(src), true);
+  check('the home banner asks for a record, not attendance',
+    /sessions to log/.test(src) && /Not a nudge to attend/.test(src), true);
+  check('settings says the same thing',
+    /a reminder to record, not a reminder to attend/.test(src), true);
+
+  const sw = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
+  check('the delivered notification itself asks you to log or skip',
+    sw.indexOf('Tap to log it, or mark it skipped.') > -1, true);
+  check('...and only when the server copy has not already said so',
+    sw.indexOf('log it|log the|record|skipped') > -1, true);
+})();
+
+/* ---- A shared link works whatever phone the recipient has (3 Sep 2026) ----
+   The landing page used to sniff the user agent and jump straight to one store.
+   The sender has no idea what the recipient carries, and a WhatsApp in-app
+   browser does not always report the agent you expect, so a wrong guess
+   dead-ended someone on a store for a phone they do not own. */
+section('Shared links offer both stores');
+(function () {
+  check('every WhatsApp footer names both stores',
+    (src.split('_Get Tally free — App Store, Google Play or web:_').length - 1), 4);
+  check('no footer still claims one link fits every device',
+    /_Get Tally free \(any device\):_/.test(src), false);
+  const getPage = fs.readFileSync(path.join(__dirname, '..', 'get', 'index.html'), 'utf8');
+  check('the landing page offers Google Play',
+    /play\.google\.com\/store\/apps/.test(getPage), true);
+  check('the landing page offers the App Store', /App Store/.test(getPage), true);
+  check('the landing page offers the browser too',
+    /tally-app-c82c6\.web\.app\/Tally\//.test(getPage), true);
+  check('the landing page no longer guesses and redirects',
+    /location\.replace\(/.test(getPage), false);
+})();
+
+/* ---- Creation forms are compact (3 Sep 2026) ---- */
+section('New Activity / New Project forms pair short fields');
+(function () {
+  check('a two-column form row exists', /class="form-row"/.test(src), true);
+  check('short controls sit on their label line', /class="form-group inline"/.test(src), true);
+  check('billing type and currency share one row',
+    /form-row[\s\S]{0,800}id="fType"[\s\S]{0,800}id="fCurrency"/.test(src), true);
+  check('the project currency picker is inline',
+    /form-group inline"[^>]*id="pfSingleCurGroup"/.test(src), true);
+})();
+
 /* ============================ RESULTS ============================ */
 Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks).concat(_pushChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
