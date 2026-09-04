@@ -96,6 +96,8 @@ const code = [
   extractFn('projSym'),
   extractFn('cur'),
   extractFn('currencyGroups'),
+  extractConstLine('const SHARING_ENABLED='),
+  extractFn('_flipView'),
   extractFn('isPay'),
   extractFn('myName'),
   extractFn('hasOther'),
@@ -656,6 +658,10 @@ function runDeletion(opts) {
   };
 
   const body = [
+    // doDeleteAccount now consults the sharing switch before it touches the
+    // auth user, and _clearAllLocalData drops ledger listeners.
+    extractConstLine('const SHARING_ENABLED='),
+    'var _ledgerDeletionChoice="";',
     extractAsyncFn('_revokeAppleTokenIfNeeded'),
     extractAsyncFn('_reauthenticateForDelete'),
     extractFn('_clearAllLocalData'),
@@ -944,7 +950,14 @@ function runPush(opts) {
       }
     }
   };
-  const run = new Function('sb', 'with(sb){' + extractMethod('_pushSyncedToFirestore') +
+  // The push now maps its payload through projectsForCloud(), so the stub
+  // rewrite has to be in the sandbox with it.
+  const run = new Function('sb', 'with(sb){' +
+    extractConstLine('const SHARING_ENABLED=') + '\n' +
+    extractConstLine('const LEDGER_LOCAL_KEYS=') + '\n' +
+    extractFn('isShared') + '\n' + extractFn('stubOf') + '\n' +
+    extractFn('projectsForCloud') + '\n' +
+    extractMethod('_pushSyncedToFirestore') +
     '\n_pushSyncedToFirestore.call({setLocalUpdatedAt:function(){}});}');
   run(sandbox);
   return written;
@@ -1881,6 +1894,203 @@ section('New Activity / New Project forms pair short fields');
     /form-row[\s\S]{0,800}id="fType"[\s\S]{0,800}id="fCurrency"/.test(src), true);
   check('the project currency picker is inline',
     /form-group inline"[^>]*id="pfSingleCurGroup"/.test(src), true);
+})();
+
+
+/* ---- Ledger sharing (4 Sep 2026) ------------------------------------------
+   The feature ships behind SHARING_ENABLED. These tests do two separate jobs:
+   the first block proves the flag is OFF and that the app therefore behaves
+   exactly as it did before, and the second re-evaluates the same functions in
+   a sandbox where the flag is ON, so the sharing logic itself is covered
+   before it is ever switched on for a real user. */
+section('Ledger sharing ships OFF — the live app is untouched');
+(function () {
+  // Quote style and spacing change when the file is minified, so every
+   // source-level assertion below is written to survive that.
+  check('the master switch is false in the shipped source',
+    /SHARING_ENABLED\s*=\s*false/.test(src), true);
+  check('a shared ledger flips nothing while the switch is off',
+    _flipView({ shared: true, ledgerId: 'lg_1', role: 'viewer', type: 'fixed' }), false);
+  check('an ordinary pay activity still reads as pay', isPay({ direction: 'pay' }), true);
+  check('an ordinary earn activity still reads as earn', isPay({ direction: 'earn' }), false);
+  check('a project with no direction still defaults to pay', isPay({ type: 'project' }), true);
+})();
+
+/* Re-evaluate the same source with the switch ON. */
+var SH = (function () {
+  const on = [
+    'const SHARING_ENABLED=true;',
+    extractConstLine('const LEDGER_ALPHABET='),
+    extractConstLine('const LEDGER_LOCAL_KEYS='),
+    extractFn('_flipView'),
+    extractFn('isPay'),
+    extractFn('myName'),
+    extractFn('hasOther'),
+    extractFn('otherName'),
+    extractFn('payerName'),
+    extractFn('receiverName'),
+    extractFn('paidBtnLabel'),
+    extractFn('balLabel'),
+    extractFn('isShared'),
+    extractFn('ledgerRole'),
+    extractFn('canEditLedger'),
+    extractFn('isLedgerOwner'),
+    extractFn('canAdminLedger'),
+    extractFn('ledgerDataOf'),
+    extractFn('stubOf'),
+    extractFn('normalizeJoinCode'),
+    extractFn('isWellFormedCode'),
+    extractFn('_mts'),
+    extractFn('mergeHistories'),
+    extractFn('_projNewer'),
+    extractFn('mergeProjectPair'),
+    'return {_flipView,isPay,otherName,payerName,receiverName,paidBtnLabel,balLabel,' +
+    'isShared,ledgerRole,canEditLedger,isLedgerOwner,canAdminLedger,ledgerDataOf,stubOf,' +
+    'normalizeJoinCode,isWellFormedCode,mergeProjectPair};'
+  ].join('\n');
+  return new Function('settings', 'cur', 'rd2', on)({ name: 'Mike' }, function () { return '$'; }, function (n) { return n; });
+})();
+
+section('The coach sees his own side of a shared one-to-one ledger');
+(function () {
+  // Rachel owns "Tennis with Coach Mike", a PAY activity: she pays him.
+  const asMike = { name: 'Tennis', type: 'fixed', direction: 'pay', counterparty: 'Coach Mike',
+                   shared: true, ledgerId: 'lg_7chq2m', role: 'editor', ownerName: 'Rachel' };
+  const asRachel = { name: 'Tennis', type: 'fixed', direction: 'pay', counterparty: 'Coach Mike',
+                     shared: true, ledgerId: 'lg_7chq2m', role: 'owner', ownerName: 'Rachel' };
+  check('the non-owner view is flipped', SH._flipView(asMike), true);
+  check('the owner view is never flipped', SH._flipView(asRachel), false);
+  check('to Mike the activity reads as earning', SH.isPay(asMike), false);
+  check('to Rachel it still reads as paying', SH.isPay(asRachel), true);
+  check('Mike sees Rachel as the payer', SH.payerName(asMike), 'Rachel');
+  check('Mike sees himself as the receiver', SH.receiverName(asMike), 'Mike');
+  check('Mike’s button reads "I Got Paid"', SH.paidBtnLabel(asMike), 'I Got Paid');
+  check('the other side is the ledger owner, not the typed counterparty',
+    SH.otherName(asMike), 'Rachel');
+  // A split has no "you" and "them", so a group is never flipped.
+  check('a group project is not flipped',
+    SH._flipView({ type: 'group', shared: true, ledgerId: 'lg_2', role: 'viewer' }), false);
+  check('a project with participants is not flipped',
+    SH._flipView({ type: 'project', participants: ['Sam', 'Ana'], shared: true, ledgerId: 'lg_3', role: 'viewer' }), false);
+  check('a lending circle is not flipped',
+    SH._flipView({ type: 'lending', shared: true, ledgerId: 'lg_4', role: 'viewer' }), false);
+})();
+
+section('What each role can do');
+(function () {
+  const mk = r => ({ shared: true, ledgerId: 'lg_1', role: r });
+  check('a viewer cannot write', SH.canEditLedger(mk('viewer')), false);
+  check('an editor can write', SH.canEditLedger(mk('editor')), true);
+  check('an owner can write', SH.canEditLedger(mk('owner')), true);
+  check('an editor is not an admin', SH.canAdminLedger(mk('editor')), false);
+  check('an owner is an admin', SH.canAdminLedger(mk('owner')), true);
+  check('an unshared tracker is always yours to admin', SH.canAdminLedger({ id: 'x' }), true);
+  check('a missing role is treated as the least privilege', SH.ledgerRole(mk(undefined)), 'viewer');
+})();
+
+section('A shared item is a STUB in users/{uid}, never a second copy of the money');
+(function () {
+  const p = { id: 'k3f9a1', name: 'Tennis with Coach Mike', type: 'fixed', rate: 30,
+              direction: 'pay', counterparty: 'Coach Mike', ledgerId: 'lg_7chq2m',
+              role: 'owner', shared: true, ownerName: 'Rachel', groupId: 'g1',
+              history: [{ id: 'e1', type: 'charge', amount: 30, date: '2026-09-01' }] };
+  const stub = SH.stubOf(p);
+  check('the stub carries no history', 'history' in stub, false);
+  check('the stub carries no rate', 'rate' in stub, false);
+  check('the stub keeps the name so an older client shows something',
+    stub.name, 'Tennis with Coach Mike');
+  check('the stub keeps the type', stub.type, 'fixed');
+  check('the stub keeps the ledger id', stub.ledgerId, 'lg_7chq2m');
+  check('the stub keeps the section it sits in', stub.groupId, 'g1');
+  const data = SH.ledgerDataOf(p);
+  check('the ledger data keeps the history', (data.history || []).length, 1);
+  check('the ledger data keeps the rate', data.rate, 30);
+  check('the ledger data carries no role', 'role' in data, false);
+  check('the ledger data carries no ledger id', 'ledgerId' in data, false);
+  check('the ledger data carries no membership', 'shared' in data, false);
+})();
+
+section('The sign-in merge must never resurrect a shared ledger');
+(function () {
+  // Two cloud copies of the same money is exactly what lets a stale one come
+  // back. On a shared pair the merge keeps the stub and drops the history.
+  const cloud = { id: 'k1', name: 'Paris Trip', shared: true, ledgerId: 'lg_9', role: 'owner',
+                  updatedAt: '2026-09-03T10:00:00.000Z' };
+  const local = { id: 'k1', name: 'Paris Trip', shared: true, ledgerId: 'lg_9', role: 'owner',
+                  updatedAt: '2026-09-01T10:00:00.000Z',
+                  history: [{ id: 'stale', type: 'charge', amount: 999, date: '2026-09-01' }] };
+  const merged = SH.mergeProjectPair(cloud, local);
+  check('a stale local history is not folded back into a shared item',
+    'history' in merged, false);
+  check('the stub itself survives the merge', merged.ledgerId, 'lg_9');
+  // An ordinary tracker still merges entry by entry, exactly as before.
+  const c2 = { id: 'k2', updatedAt: '2026-09-03T10:00:00.000Z',
+               history: [{ id: 'a', type: 'charge', amount: 10, date: '2026-09-02' }] };
+  const l2 = { id: 'k2', updatedAt: '2026-09-01T10:00:00.000Z',
+               history: [{ id: 'b', type: 'charge', amount: 20, date: '2026-09-01' }] };
+  check('an unshared tracker still unions its history', SH.mergeProjectPair(c2, l2).history.length, 2);
+})();
+
+section('Join codes');
+(function () {
+  const ALPHA = /LEDGER_ALPHABET\s*=\s*["']([A-Z0-9]+)["']/.exec(src)[1];
+  check('the alphabet has 32 characters', ALPHA.length, 32);
+  check('the alphabet excludes O and 0', /[O0]/.test(ALPHA), false);
+  check('the alphabet excludes I and 1', /[I1]/.test(ALPHA), false);
+  check('input is case-insensitive', SH.normalizeJoinCode('t7km2x'), 'T7KM2X');
+  check('spaces and dashes are forgiven', SH.normalizeJoinCode(' t7-km 2x '), 'T7KM2X');
+  check('a good code is accepted', SH.isWellFormedCode('T7KM2X'), true);
+  check('a code containing 0 is rejected — it is not in the alphabet',
+    SH.isWellFormedCode('T0KM2X'), false);
+  check('a short code is rejected', SH.isWellFormedCode('T7KM2'), false);
+  check('an empty code is rejected', SH.isWellFormedCode(''), false);
+  check('codes expire after seven days', /INVITE_DAYS\s*=\s*7/.test(src), true);
+})();
+
+section('Sharing is always an invite, and it says what it is');
+(function () {
+  check('the message carries a join code', /Your join code: \*/.test(src), true);
+  check('the message carries a tap-through link', /\?join=/.test(src), true);
+  check('the message tells a new user where to type the code',
+    /Access Your Invites &rarr; enter |Access Your Invites → enter /.test(src), true);
+  check('someone who already joined gets a link, not a fresh code',
+    /\?open=/.test(src), true);
+  check('the entry screen exists', /Access Your Invites/.test(src), true);
+  check('a viewer is told why, not shown a dead button',
+    src.indexOf('a viewer') >= 0, true);
+})();
+
+section('Failures name the actual reason, never just "invalid code"');
+(function () {
+  check('expired', /has expired/.test(src), true);
+  check('already used', /already been used/.test(src), true);
+  check('withdrawn by the owner', /withdrawn by the person who sent it/.test(src), true);
+  check('no such code', /No invite with that code/.test(src), true);
+  check('already a member', /already a member of that ledger/.test(src), true);
+})();
+
+section('The data-loss guards have a per-ledger sibling');
+(function () {
+  check('a ledger write is a transaction', /runTransaction/.test(src), true);
+  // The sharing write calls the SAME mergeHistories the sign-in merge uses.
+  // Two merges with different rules is how the two sides start disagreeing.
+  check('it reuses the one merge the app already has, not a second one',
+    (src.split('mergeHistories(').length - 1) >= 3, true);
+  check('no member may empty a non-empty ledger', /empty-history-refused/.test(src), true);
+  check('a deletion is remembered, so the union cannot hand the entry back',
+    /deletedIds/.test(src), true);
+  check('nobody writes to a ledger before its first snapshot arrives',
+    /_lgLoaded/.test(src), true);
+  check('account deletion asks what happens to shared trackers',
+    /Pass to the longest-standing editor/.test(src), true);
+  // Ledgers must be dealt with while the account still has permission to touch
+  // them — once the auth user is gone, so is the permission.
+  const _dd = extractAsyncFn('doDeleteAccount');
+  check('shared ledgers are handled before anything is deleted',
+    _dd.indexOf('handOverOwnedLedgers') >= 0 &&
+    _dd.indexOf('handOverOwnedLedgers') < _dd.indexOf('.delete()'), true);
+  check('handing over picks the longest-standing editor',
+    /function longestStandingEditor/.test(src), true);
 })();
 
 /* ============================ RESULTS ============================ */
