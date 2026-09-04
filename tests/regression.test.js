@@ -1920,7 +1920,9 @@ section('Sharing is invisible to everyone except the named test accounts');
   const entries = (LIST.match(/['"][^'"]+['"]/g) || []).map(x => x.slice(1, -1));
   check('the allowlist is not empty — sharing is NOT open to everyone',
     entries.length > 0, true);
-  check('exactly three accounts are named', entries.length, 3);
+  // The named testers. Bump this deliberately when the list changes - it is
+  // here so an accidental edit to the allowlist cannot pass unnoticed.
+  check('exactly eight accounts are named', entries.length, 8);
   check('every entry is an email address',
     entries.every(e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)), true);
   // The gate itself.
