@@ -1920,7 +1920,7 @@ section('Sharing is invisible to everyone except the named test accounts');
   const entries = (LIST.match(/['"][^'"]+['"]/g) || []).map(x => x.slice(1, -1));
   check('the allowlist is not empty — sharing is NOT open to everyone',
     entries.length > 0, true);
-  check('exactly two accounts are named', entries.length, 2);
+  check('exactly three accounts are named', entries.length, 3);
   check('every entry is an email address',
     entries.every(e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)), true);
   // The gate itself.
@@ -1977,7 +1977,8 @@ var SH = (function () {
     extractFn('mergeHistories'),
     extractFn('_projNewer'),
     extractFn('mergeProjectPair'),
-    'return {_flipView,isPay,otherName,payerName,receiverName,paidBtnLabel,balLabel,' +
+    extractFn('reconcileLedgerHistory'),
+    'return {_flipView,isPay,otherName,payerName,receiverName,paidBtnLabel,balLabel,reconcileLedgerHistory,' +
     'isShared,ledgerRole,canEditLedger,isLedgerOwner,canAdminLedger,ledgerDataOf,stubOf,' +
     'normalizeJoinCode,isWellFormedCode,mergeProjectPair};'
   ].join('\n');
@@ -2102,6 +2103,38 @@ section('Failures name the actual reason, never just "invalid code"');
   check('already a member', /already a member of that ledger/.test(src), true);
 })();
 
+/* ---- The 4 Sep 2026 bug: a snapshot erased an unpushed entry --------------
+   Reported from a real two-account test: an activity was shared, sessions were
+   logged, and the joiner saw an empty ledger. The ledger document had
+   history:[] and version:1 - no update had ever been written to it. Cause: the
+   WRITE path merged by entry id but the READ path copied the server's history
+   straight over local state, so an entry logged before its ledger write landed
+   was erased in memory and left nothing dirty to retry. */
+section('A ledger snapshot can never delete an entry this device still holds');
+(function () {
+  const e = (id, d) => ({ id: id, type: 'charge', amount: 25, date: d });
+  // The reported case: server empty, this device holding two logged sessions.
+  const kept = SH.reconcileLedgerHistory({ history: [] },
+    [e('a', '2026-09-04'), e('b', '2026-09-03')]);
+  check('two unpushed entries survive an empty snapshot', kept.length, 2);
+  check('and they are the right ones', kept.map(h => h.id).sort().join(','), 'a,b');
+  // The ordinary case: both sides have entries, union by id, no duplicates.
+  const both = SH.reconcileLedgerHistory({ history: [e('a', '2026-09-04'), e('c', '2026-09-02')] },
+    [e('a', '2026-09-04'), e('b', '2026-09-03')]);
+  check('union by id, nothing duplicated', both.map(h => h.id).sort().join(','), 'a,b,c');
+  // A deliberate deletion must NOT come back - that is what tombstones are for.
+  const tombed = SH.reconcileLedgerHistory({ history: [], deletedIds: ['b'] },
+    [e('a', '2026-09-04'), e('b', '2026-09-03')]);
+  check('a deliberately deleted entry stays deleted',
+    tombed.map(h => h.id).join(','), 'a');
+  // The other direction: a snapshot carrying entries this device lacks.
+  const fromServer = SH.reconcileLedgerHistory({ history: [e('x', '2026-09-05')] }, []);
+  check('an entry that only the server has still arrives', fromServer.length, 1);
+  // Nothing at all, from either side.
+  check('empty on both sides stays empty',
+    SH.reconcileLedgerHistory({}, undefined).length, 0);
+})();
+
 section('The data-loss guards have a per-ledger sibling');
 (function () {
   check('a ledger write is a transaction', /runTransaction/.test(src), true);
@@ -2114,6 +2147,8 @@ section('The data-loss guards have a per-ledger sibling');
     /deletedIds/.test(src), true);
   check('nobody writes to a ledger before its first snapshot arrives',
     /_lgLoaded/.test(src), true);
+  check('the read path merges instead of overwriting',
+    /reconcileLedgerHistory\(/.test(src), true);
   check('account deletion asks what happens to shared trackers',
     /Pass to the longest-standing editor/.test(src), true);
   // Ledgers must be dealt with while the account still has permission to touch
