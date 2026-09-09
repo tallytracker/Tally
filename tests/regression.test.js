@@ -124,6 +124,25 @@ const code = [
   extractFn('syncBalance'),
   extractFn('calcRunningBalances'),
   extractFn('removeEntriesByIds'),
+  extractConstLine('const LEDGER_LOCAL_KEYS='),
+  'var _lgBase={};',   // module state in the app; the sandbox needs its own
+  'function showToast(){}',  // deleteEntry reports the not-found case through it
+  'const db={saveProject(){}};',
+  extractFn('findEntry'),
+  extractFn('deleteEntry'),
+  extractFn('isShared'),
+  extractFn('ledgerRole'),
+  extractFn('canEditLedger'),
+  extractFn('canAdminLedger'),
+  /* The 9 Sep 2026 permission seam. addEntry/updateEntry/deleteEntry and the
+     three doEdit*Entry writers all go through requireEditRights now, so it has
+     to exist in the sandbox or every write test throws. */
+  extractFn('canWriteEntries'),
+  extractFn('requireEditRights'),
+  extractFn('entryRowAttrs'),
+  extractFn('markEntriesDeleted'),
+  extractFn('reconcileLedgerHistory'),
+  extractFn('hydrateStub'),
   extractFn('sessionNet'),
   extractFn('remainingMins'),
 ].join('\n');
@@ -149,6 +168,44 @@ const computeBalances = new Function('p', 'FX',
 // bind helpers the balance block calls
 const ctx = { isMultiCur, entryCcy, amtMain, fxConvert, rd2, calcTransfers, getEntriesSinceLastSettlement };
 function balances(p) { return computeBalances.call(ctx, p, FX); }
+
+// The shared-ledger snapshot handler lives inline inside attachLedgerListener.
+// The 5 Sep 2026 bug was in the ORDER of the statements, not in any one
+// function, so slice the real block out and run it — a re-typed copy here
+// would keep passing while the app broke.
+/* THE ANCHORS ARE SHAPES, NOT NAMES (fixed 9 Sep 2026).
+   These two markers were spelled out with their local names — `const keep=` and
+   `p.role=me.role||p.role;` — and the minifier renames every one of them. So
+   this threw on the shipped file and the suite could not be run against it at
+   all, which is BUILD NOTES step 7 and the exact trap the handoff warns about:
+   "green on the minified build WAS A LIE". Match the shape instead: the
+   FUNCTION names survive mangling, the locals around them do not. */
+(function buildApplySnapshot() {
+  const fn = extractFn('attachLedgerListener');
+  const startRe = /(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*reconcileLedgerHistory\(/;
+  // Stop before the member/role bookkeeping — this test is about history only.
+  const endRe = /\.role\s*=\s*[A-Za-z_$][\w$]*\.role\s*\|\|\s*[A-Za-z_$][\w$]*\.role\s*;/;
+  const sm = startRe.exec(fn);
+  const em = sm ? endRe.exec(fn.slice(sm.index)) : null;
+  if (!sm || !em) throw new Error('Ledger-snapshot markers not found in attachLedgerListener (was it refactored? update the anchors in regression.test.js)');
+  global.__SNAP__ = fn.slice(sm.index, sm.index + em.index);
+  /* The block reads the ledger document out of a LOCAL, and that local is `d`
+     in the master and something like `n` in the shipped file. `p` survives only
+     because it is in build-minified.js's reserved list, and reserving one more
+     single letter for a test's convenience is a worse trade than reading the
+     name back out of the code. It is the first argument of the
+     reconcileLedgerHistory call the slice starts with. */
+  const dm = /reconcileLedgerHistory\(\s*([A-Za-z_$][\w$]*)\.data/.exec(global.__SNAP__);
+  if (!dm) throw new Error('Could not tell which local holds the ledger document in attachLedgerListener');
+  global.__SNAP_DATA_VAR__ = dm[1];
+})();
+
+/* MATCHES EITHER QUOTE CHARACTER. This suite is run twice — once against the
+   readable master and once against the shipped, minified file (BUILD NOTES
+   step 7) — and terser rewrites every single-quoted string as double-quoted.
+   A structural check that spells the quote is a check that only ever runs
+   once. */
+const Q = '["\']';
 
 // ---- Tiny assertion helpers ----
 let pass = 0, fail = 0;
@@ -538,6 +595,67 @@ removeEntriesByIds(_un, ['sX']);
 check('settlement line removed', _un.history.length, 2);
 check('balance recomputes itself', _un.balance, 130);
 check('original entries untouched', _un.history.map(h => h.id).join(','), 'c2,c1');
+
+section('Shared ledger: a delete stays deleted (5 Sep 2026 bug)');
+// REPORTED: a project was shared with an editor, the editor added an entry,
+// and neither member could delete it. The toast said "Entry deleted" and the
+// entry came straight back.
+// TWO causes, both pinned here:
+//   1. The snapshot handler copied the server's history over local state and
+//      then only put the reconciled copy back when the two differed in LENGTH.
+//      A delete the server has not heard about yet is exactly the same-length,
+//      different-contents case, so the entry returned.
+//   2. With the entry back in p.history there was nothing for the next push to
+//      subtract, so the tombstone was never written and the delete was lost.
+let _pushed = false;
+function pushDirtyLedgers() { _pushed = true; }
+// Tombstones are only kept for SHARED ledgers, so this section has to run as an
+// account that has sharing unlocked. Restored at the end of the section.
+const _savedUser = currentUser;
+currentUser = {
+  email: (/SHARING_ALLOWED_ACCOUNTS\s*=\s*\[\s*['"]([^'"]+)/.exec(src) || [, ''])[1],
+  isAnonymous: false,
+};
+const applySnapshot = new Function('p', global.__SNAP_DATA_VAR__, 'ctx',
+  'with(ctx){' + global.__SNAP__ + '} return p;');
+function snapshot(p, serverData) {
+  _lgBase[p.ledgerId] = serverData;
+  const ctx = {
+    reconcileLedgerHistory, hydrateStub, pushDirtyLedgers, isShared,
+    setTimeout: (f) => f(),
+  };
+  return applySnapshot(p, { data: serverData }, ctx);
+}
+const _E = (id) => ({ id, type: 'charge', amount: id * 10, note: 'e' + id,
+                      date: '2026-09-0' + id + 'T10:00:00.000Z',
+                      updatedAt: '2026-09-0' + id + 'T10:00:00.000Z' });
+const _shared = { id: 'p1', shared: true, ledgerId: 'L1', role: 'owner', type: 'project',
+                  currency: '$', history: [_E(3), _E(2), _E(1)] };
+snapshot(_shared, { history: [_E(3), _E(2), _E(1)] });
+check('both members see all three entries', _shared.history.map(h => h.id).join(','), '3,2,1');
+
+// The owner deletes the entry the editor added.
+deleteEntry(_shared, 2);
+check('it leaves the screen at once', _shared.history.map(h => h.id).join(','), '3,1');
+check('and a local tombstone is recorded', (_shared.deletedIds || []).join(','), '2');
+
+// A snapshot lands before the tombstone reaches the ledger: the server still
+// has all three and knows nothing about the delete.
+snapshot(_shared, { history: [_E(3), _E(2), _E(1)] });
+check('the deleted entry does NOT come back', _shared.history.map(h => h.id).join(','), '3,1');
+check('the tombstone survives to be pushed', (_shared.deletedIds || []).join(','), '2');
+
+// Once the ledger carries the tombstone, this device stops holding its own.
+snapshot(_shared, { history: [_E(3), _E(1)], deletedIds: ['2'] });
+check('still deleted once the ledger agrees', _shared.history.map(h => h.id).join(','), '3,1');
+check('local tombstone is pruned', (_shared.deletedIds || []).length, 0);
+
+// The other half of the report: the app announced a delete that never happened.
+const _missing = { id: 'p2', type: 'project', currency: '$', history: [_E(1)] };
+check('deleting an entry that is gone reports failure', deleteEntry(_missing, 99), false);
+check('deleting one that is there reports success', deleteEntry(_missing, 1), true);
+check('an UNSHARED tracker keeps no tombstones', (_missing.deletedIds || []).length, 0);
+currentUser = _savedUser;
 
 section('Remaining time drops when a payment is logged (22 Jul 2026 bug)');
 // Hourly @ 43.73/hr: 37h30m logged = 1639.875. Payment of 1399.4 leaves
@@ -942,6 +1060,7 @@ function runPush(opts) {
     currentUser: { uid: 'UID_A', isAnonymous: false },
     _accountDeleting: false,
     _syncLoadedUid: opts.loadedUid,
+    _deferredPushUid: '',
     projects: opts.projects, groups: [], settings: { name: 'Rachel' },
     syncStatus: '', updateSyncBadge: function () {},
     console: { error: function () {}, warn: function () {} },
@@ -967,6 +1086,10 @@ function runPush(opts) {
     extractMethod('_pushSyncedToFirestore') +
     '\n_pushSyncedToFirestore.call({setLocalUpdatedAt:function(){}});}');
   run(sandbox);
+  // The 9 Sep 2026 additions: what the user was TOLD, and whether the refused
+  // write was remembered for a retry.
+  written.status = sandbox.syncStatus;
+  written.deferred = sandbox._deferredPushUid;
   return written;
 }
 
@@ -986,6 +1109,41 @@ check('empty-write guard: normal save still writes',
 check('empty-write guard: non-empty save allowed even pre-load',
   runPush({ projects: [{ id: 1 }], loadedUid: '' }).length, 1);
 
+/* ---- The 9 Sep 2026 report: the FIRST Google sign-in said "Sync error" ----
+   Rachel, on two different Android handsets: the first Google sign-in on a
+   device showed a sync error, the sign-in repeated, and the second attempt was
+   fine. It was never a sign-in fault. A brand-new account has no trackers
+   (projects.length === 0) and its first snapshot has not landed yet
+   (_syncLoadedUid !== uid) — which is precisely the guard above. The welcome
+   screen's name step saves inside that window, hit the guard, and the guard
+   painted 'error' and threw the write away.
+
+   The refusal is correct and must stay. These checks pin the two things that
+   were wrong about it: what the user is told, and that the write comes back. */
+(function () {
+  const r = runPush({ projects: [], loadedUid: '' });
+  check('a deferred write is not reported to the user as a sync error', r.status === 'error', false);
+  check('it reports the honest state instead — still syncing', r.status, 'syncing');
+  check('and the refused write is remembered, not dropped', r.deferred, 'UID_A');
+  const ok = runPush({ projects: [{ id: 1 }], loadedUid: '' });
+  check('a write that was never refused leaves nothing deferred', ok.deferred, '');
+})();
+// THE RETRY ITSELF. A snapshot for the account opens the load gate, and the
+// write the guard deferred goes up with it — otherwise the name typed on the
+// welcome screen would sit in the local cache until something else saved.
+(function () {
+  const acted = runSnapshot({ localStamp: 0, cloudStamp: 1000, localProjects: [],
+                              cloudProjects: [], loadedUid: '', deferredUid: 'UID_A' });
+  check('the deferred write is retried when the account finishes loading',
+    acted.includes('pushed'), true);
+})();
+(function () {
+  const acted = runSnapshot({ localStamp: 0, cloudStamp: 1000, localProjects: [],
+                              cloudProjects: [], loadedUid: '', deferredUid: 'UID_OTHER' });
+  check('a write deferred for another account is NOT sent for this one',
+    acted.includes('pushed'), false);
+})();
+
 /* ---- GUARD 2: "cloud is stale" must not become "blank the cloud" ---- */
 function runSnapshot(opts) {
   const acted = [];
@@ -997,6 +1155,7 @@ function runSnapshot(opts) {
     projects: opts.localProjects, groups: [], settings: {},
     migrateData: function () {}, startApp: function () {}, refreshCurrentView: function () {},
     ensureNameFromAccount: function () { return false; },
+    _deferredPushUid: opts.deferredUid || '',
     console: { error: function () {}, warn: function () { acted.push('warn'); } },
     Date: Date,
     firebase: { firestore: { FieldValue: { serverTimestamp: function () { return 'TS'; } } } },
@@ -1019,7 +1178,11 @@ function runSnapshot(opts) {
       }
     }
   };
-  const run = new Function('sb', 'with(sb){' + extractFn('startFirestoreSync') +
+  // _openLoadGate is the one place _syncLoadedUid is now assigned, and it is
+  // what retries a write the empty-write guard deferred. Extract the REAL one —
+  // a stub here would let the retry break without a single test noticing.
+  const run = new Function('sb', 'with(sb){' + extractFn('_openLoadGate') + '\n' +
+    extractFn('startFirestoreSync') +
     ' startFirestoreSync("UID_A"); return null;}');
   run(sandbox);
   snapCb({
@@ -1957,6 +2120,7 @@ var SH = (function () {
     extractFn('sharingUnlocked'),
     extractConstLine('const LEDGER_ALPHABET='),
     extractConstLine('const LEDGER_LOCAL_KEYS='),
+    'function showToast(){}',  // requireEditRights reports the refusal through it
     extractFn('_flipView'),
     extractFn('isPay'),
     extractFn('myName'),
@@ -1971,6 +2135,9 @@ var SH = (function () {
     extractFn('canEditLedger'),
     extractFn('isLedgerOwner'),
     extractFn('canAdminLedger'),
+    extractFn('canWriteEntries'),
+    extractFn('requireEditRights'),
+    extractFn('entryRowAttrs'),
     extractFn('ledgerDataOf'),
     extractFn('stubOf'),
     extractFn('normalizeJoinCode'),
@@ -1982,6 +2149,7 @@ var SH = (function () {
     extractFn('reconcileLedgerHistory'),
     'return {_flipView,isPay,otherName,payerName,receiverName,paidBtnLabel,balLabel,reconcileLedgerHistory,' +
     'isShared,ledgerRole,canEditLedger,isLedgerOwner,canAdminLedger,ledgerDataOf,stubOf,' +
+    'canWriteEntries,requireEditRights,entryRowAttrs,' +
     'normalizeJoinCode,isWellFormedCode,mergeProjectPair};'
   ].join('\n');
   return new Function('settings', 'cur', 'rd2', on)({ name: 'Mike' }, function () { return '$'; }, function (n) { return n; });
@@ -2085,15 +2253,133 @@ section('Join codes');
 
 section('Sharing is always an invite, and it says what it is');
 (function () {
-  check('the message carries a join code', /Your join code: \*/.test(src), true);
+  /* Rachel's copy, 9 Sep 2026. The message is matched on its LITERAL strings
+     rather than on any function name, because the minifier renames names and
+     leaves string literals alone — the lesson three v90 tests learned. */
+  check('the message opens as a person, not a notification',
+    /using Tally – The Simple Balance Tracker to track our balance for/.test(src), true);
+  check('the message carries the balance, labelled', /📌 Current Balance: /.test(src), true);
+  check('the balance is stamped as of today', /as of today\./.test(src), true);
+  check('the message carries a join code', /Join Code: \*/.test(src), true);
+  /* QUOTES ARE NOT PART OF THE CODE. terser rewrites every single-quoted
+     string as double-quoted, so a check that spells the quote passes on the
+     master and fails on the shipped file — which is the whole point of running
+     this suite twice. Q matches either. */
+  check('the code says how long it lasts and that it is single use',
+    new RegExp('valid for ' + Q + '\\+INVITE_DAYS\\+' + Q + ' days, 1-time use').test(src), true);
   check('the message carries a tap-through link', /\?join=/.test(src), true);
   check('the message tells a new user where to type the code',
-    /Access Your Invites &rarr; enter |Access Your Invites → enter /.test(src), true);
+    /Access Your Invites ➔ enter/.test(src), true);
+  check('the message names both stores for a new user',
+    /Get it free on the App Store or Google Play/.test(src), true);
   check('someone who already joined gets a link, not a fresh code',
     /\?open=/.test(src), true);
   check('the entry screen exists', /Access Your Invites/.test(src), true);
   check('a viewer is told why, not shown a dead button',
     src.indexOf('a viewer') >= 0, true);
+  /* THE ROLE STILL CHANGES THE SENTENCE. Rachel's template said "invited you to
+     view your live balance" for every invite; an editor invite that reads
+     exactly like a viewer invite is a promise the app then breaks. Agreed
+     before it went in: the verb is the only thing that moves. */
+  const rs = extractFn('roleSentence');
+  check('an editor invite does not read like a viewer invite',
+    new RegExp(Q + 'view and update' + Q).test(rs) && new RegExp(Q + 'editor' + Q).test(rs), true);
+})();
+
+/* ---- A viewer may not share the LEDGER (Rachel, 9 Sep 2026) ---------------
+   This reverses the design's section 9 line "send the invite message: viewer ✓".
+   The reason is the message itself: every share now carries the balance, and a
+   person let in to look does not get to pass that on. An EDITOR keeps the
+   button — they cannot mint a code, so all they can send is the balance plus an
+   ?open= link only an existing member can use. */
+section('A viewer cannot share the ledger, and is not left with nothing');
+(function () {
+  const lockdown = extractFn('applyRoleLockdown');
+  /* Read the flag's name OUT of the function rather than spelling it, so this
+     still means something on the minified build where it is called `e`. It has
+     to be the SAME flag the write controls use, or "hidden" would be a
+     different question from "read-only". */
+  /* Both the local helper (`show`, mangled to a letter) and the flag it is
+     handed are read back OUT of the function, so this means the same thing on
+     the master and on the shipped file. Asserting the SAME flag matters: it is
+     what makes "hidden" the same question as "read-only". */
+  const lm = new RegExp('([\\w$]+)\\(' + Q + 'oneOffToggle' + Q + ',([\\w$]+)\\)').exec(lockdown) || [];
+  const showFn = lm[1], ed = lm[2];
+  check('the share controls are tied to the same read-only flag as the write controls',
+    !!(showFn && ed), true);
+  ['projShareBtn', 'detailShareBtn', 'detailWaShareBtn', 'lendShareBtn'].forEach(function (id) {
+    check(id + ' is hidden from a viewer',
+      new RegExp(showFn + '\\(' + Q + id + Q + ',' + ed + '\\)').test(lockdown), true);
+  });
+  const flow = extractFn('startInviteFlow');
+  check('and the guard is behind the button too, not only in the CSS',
+    /canWriteEntries\(/.test(flow), true);
+  check('the refusal points them at the share they DO have',
+    /share the app from Settings/.test(src), true);
+  /* THE APP SHARE NAMES NO MONEY. That is the whole reason it is allowed. */
+  const appMsg = extractFn('buildAppShareMessage');
+  check('the app share exists', appMsg.length > 0, true);
+  check('the app share carries no balance', /Current Balance|balance:/i.test(appMsg.replace(/live balance|the balance is/gi, '')), false);
+  check('the app share offers both stores',
+    /Get it free — App Store, Google Play or web/.test(appMsg), true);
+  check('Settings offers it to every role', /onclick="shareTallyApp\(\)"/.test(src), true);
+})();
+
+/* ---- The owner can change access without throwing anyone out -------------- */
+section('The owner can promote, demote or revoke a member');
+(function () {
+  const setRole = extractFn('setLedgerMemberRole');
+  check('the role write exists', setRole.length > 0, true);
+  check('it writes ONE field, not the whole members map',
+    new RegExp('\\[' + Q + 'members\\.' + Q + '\\+[\\w$]+\\+' + Q + '\\.role' + Q + '\\]\\s*=').test(setRole), true);
+  check('it refuses a role that is not editor or viewer',
+    new RegExp('!==\\s*' + Q + 'editor' + Q + '\\s*&&\\s*[\\w$]+\\s*!==\\s*' + Q + 'viewer' + Q).test(setRole), true);
+  /* The owner branch of the ledger rules is unfenced, so no rules change was
+     needed — but the member must never be able to reach this. */
+  const sheet = extractFn('showLedgerMembers');
+  check('only the owner sees the controls', /isLedgerOwner\(/.test(sheet), true);
+  check('the owner cannot demote themselves here',
+    new RegExp('!isLedgerOwner\\([\\w$]+\\)\\s*\\|\\|\\s*[\\w$]+\\s*===\\s*' + Q + 'owner' + Q).test(sheet), true);
+  check('a promotion is offered to a viewer', /Make editor/.test(sheet), true);
+  check('a demotion is offered to an editor', /Make viewer/.test(sheet), true);
+  check('revoking is still there, and now says so', /Revoke/.test(sheet), true);
+  /* The member finds out by themselves: the snapshot handler already re-reads
+     the role on every ledger update. If that line ever goes, a demoted editor
+     keeps their buttons until they restart the app. */
+  check('a role change reaches the member through the ledger snapshot',
+    /\.role\s*=\s*[\w$]+\.role\s*\|\|\s*[\w$]+\.role/.test(extractFn('attachLedgerListener')), true);
+})();
+
+/* ---- The 9 Sep 2026 bug: a viewer could still EDIT an entry --------------
+   addEntry, updateEntry and deleteEntry were all guarded. The three functions
+   that actually save an edit were not: doEditEntry, doEditProjectEntry and
+   doEditLendingEntry mutate the entry object and call db.saveProject directly,
+   so updateEntry's guard was dead code and never ran. */
+section('A viewer cannot edit an entry');
+(function () {
+  ['doEditEntry', 'doEditProjectEntry', 'doEditLendingEntry',
+   'doClearAll', 'doDeleteSettlement', 'undoLastSettle'].forEach(function (fn) {
+    check(fn + ' asks permission before it saves', /requireEditRights\(/.test(extractFn(fn)), true);
+  });
+  check('Settle All & Reset is owner-only, not merely editor-writable',
+    /canAdminHere\(/.test(extractFn('doSettleReset')), true);
+  /* updateEntry was never called by anything. It is still the right guard to
+     keep, but it was not the one that mattered. */
+  check('the guard is one function now, not three inline copies',
+    (src.split('requireEditRights(').length - 1) >= 9, true);
+  const mk = r => ({ shared: true, ledgerId: 'lg_1', role: r });
+  check('a viewer may not write', SH.canWriteEntries(mk('viewer')), false);
+  check('an editor may write', SH.canWriteEntries(mk('editor')), true);
+  check('an owner may write', SH.canWriteEntries(mk('owner')), true);
+  check('an UNSHARED tracker is always writable — it has no role at all',
+    SH.canWriteEntries({ id: 'x' }), true);
+  /* HIDDEN, NOT DISABLED (design section 9). A history row that opens an edit
+     sheet a viewer cannot use is the same dead control the design rejected for
+     the action buttons, so for a viewer the row stops being tappable. */
+  check('a viewer\'s history row is not tappable',
+    SH.entryRowAttrs(mk('viewer'), 'showEntryActions', 'e1'), '');
+  check('an editor\'s history row still opens the sheet',
+    /showEntryActions\('e1'\)/.test(SH.entryRowAttrs(mk('editor'), 'showEntryActions', 'e1')), true);
 })();
 
 section('Failures name the actual reason, never just "invalid code"');
