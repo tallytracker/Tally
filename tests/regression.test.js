@@ -112,6 +112,11 @@ const code = [
   extractFn('calcPersonExpenseBreakdown'),
   extractFn('calcHistoryStatusMap'),
   extractFn('projNetBalances'),
+  /* The two the WhatsApp messages are built from. calcGroupSettlement was
+     never exercised here, which is how it spent its whole life filtering on
+     an entry type the app has never written (10 Sep 2026). */
+  extractFn('calcGroupSettlement'),
+  extractFn('inviteGroupBlock'),
   extractFn('calcPairwiseMatrix'),
   extractFn('pairNet'),
   extractFn('calcPairwiseTransfers'),
@@ -2447,6 +2452,149 @@ section('The data-loss guards have a per-ledger sibling');
     _dd.indexOf('handOverOwnedLedgers') < _dd.indexOf('.delete()'), true);
   check('handing over picks the longest-standing editor',
     /function longestStandingEditor/.test(src), true);
+})();
+
+section('A shared group message must say what the screen says');
+/* THE BUG THIS PINS (10 Sep 2026). calcGroupSettlement filtered history on
+   h.type==='expense'. The app writes 'charge' — everywhere, always — so the
+   filter matched nothing, every balance came out 0, calcTransfers returned an
+   empty list and every group WhatsApp message ever sent read "Total: 0" and
+   "✅ All settled!". The screen was right the whole time, because
+   renderProjectDetail and projNetBalances do their own sum on 'charge'.
+   Rachel found it inviting Diana to a project with 2,011 outstanding.
+   The test is deliberately written as an AGREEMENT between the message and
+   the screen rather than as a fixed expected number: the failure mode was two
+   implementations of one calculation drifting apart, so the assertion is that
+   they cannot. */
+(function () {
+  FX = { base: 'USD', rates: { USD: 1 }, date: '' };
+  // Rachel pays for everything; Diana and Sabine owe her their shares.
+  const p = {
+    id: 'g9', name: 'Beirut weekend', type: 'project',
+    participants: ['Rachel', 'Diana', 'Sabine'], mainCur: 'USD',
+    history: [
+      { id: 'e1', type: 'charge', amount: 2000, paidBy: 'Rachel', date: '2026-09-02' },
+      { id: 'e2', type: 'charge', amount: 1011, paidBy: 'Rachel', date: '2026-09-03' },
+      { id: 'e3', type: 'payment', amount: 6, from: 'Diana', to: 'Rachel', date: '2026-09-04' }
+    ]
+  };
+  const s = calcGroupSettlement(p);
+  near('the trip total is the money actually spent', s.totalExpenses, 3011);
+  check('it is not zero, which is what "all settled" was built on',
+    s.totalExpenses > 0, true);
+  // Every charge is split three ways: each owes 1003.67; Rachel paid 3011 and
+  // Diana has already handed back 6.
+  near('Rachel is owed the rest', s.balances.Rachel, 2001.33);
+  near('Diana owes her share less what she has paid back', s.balances.Diana, -997.67);
+  near('Sabine owes her full share', s.balances.Sabine, -1003.67);
+  const msgTransfers = calcTransfers(s.balances);
+  check('the message has somebody owing somebody', msgTransfers.length > 0, true);
+  // THE REAL ASSERTION: the figures behind the message and the figures behind
+  // the screen are the same figures.
+  const screenTransfers = calcTransfers(projNetBalances(p));
+  transfers('the message agrees with the project screen, transfer for transfer',
+    msgTransfers, screenTransfers);
+  const block = inviteGroupBlock(p);
+  check('the invite does not claim the group is square',
+    block.indexOf('All settled') >= 0, false);
+  check('the invite names who owes whom', /Diana|Sabine/.test(block), true);
+  check('the invite states what is still outstanding', /Outstanding/.test(block), true);
+  // And when it really IS settled, it still says so.
+  const even = {
+    id: 'g10', name: 'Even', type: 'project', participants: ['Rachel', 'Diana'], mainCur: 'USD',
+    history: [
+      { id: 'f1', type: 'charge', amount: 100, paidBy: 'Rachel', date: '2026-09-02' },
+      { id: 'f2', type: 'payment', amount: 50, from: 'Diana', to: 'Rachel', date: '2026-09-03' }
+    ]
+  };
+  check('a genuinely settled group still reads as settled',
+    inviteGroupBlock(even).indexOf('All settled') >= 0, true);
+  check('and it still reports what the trip cost',
+    calcGroupSettlement(even).totalExpenses, 100);
+})();
+
+section('Leaving is not the first thing a guest is offered');
+/* Rachel, 10 Sep 2026: the strip across the top of a shared ledger carried a
+   single Leave button, so the most prominent control a guest ever saw was the
+   one that threw away their access. It moved into the members dialog, beside
+   the owner's equivalent. These match on FUNCTION names inside string
+   literals, which survive minification; local names would not. */
+(function () {
+  const strip = extractFn('sharedStripHtml');
+  check('the strip no longer offers Leave', strip.indexOf('confirmLeaveLedger') >= 0, false);
+  check('the strip opens the members dialog instead', strip.indexOf('showLedgerMembers') >= 0, true);
+  const members = extractFn('showLedgerMembers');
+  check('Leave is reachable from the members dialog', members.indexOf('confirmLeaveLedger') >= 0, true);
+  check('and only a non-owner is offered it', /!isLedgerOwner\(p\)\s*\?[\s\S]{0,300}confirmLeaveLedger/.test(members), true);
+  check('leaving still confirms before it happens', /function confirmLeaveLedger/.test(src), true);
+})();
+
+section('An invite that nobody has accepted is still visible, and only to the owner');
+(function () {
+  const members = extractFn('showLedgerMembers');
+  check('the members dialog lists outstanding invites', members.indexOf('livePendingInvites') >= 0, true);
+  check('it offers to send the same code again', members.indexOf('resendInvite') >= 0, true);
+  check('it offers to cancel the invite', members.indexOf('confirmRevokeInvite') >= 0, true);
+  check('pending invites are owner-only', new RegExp('isLedgerOwner\\(p\\)\\s*\\?\\s*livePendingInvites').test(members), true);
+  // Resending must not mint a second code — that is the bug below.
+  const resend = extractFn('resendInvite');
+  check('resending reuses the stored code', resend.indexOf('createInviteCode') >= 0, false);
+  check('resending rebuilds the same message', resend.indexOf('buildInviteMessage') >= 0, true);
+})();
+
+section('Resharing supersedes the old code instead of running two');
+/* Rachel's question, 10 Sep 2026: "if they reshare the new code, which code is
+   active if both are still within the 7 days expiry?" Both were. Either could
+   be redeemed, by anyone holding it — on a group project that meant a stranger
+   could take a named participant's slot. The previous code is now revoked
+   before the new one is handed over. */
+(function () {
+  const create = extractAsyncFn('doCreateInvite');
+  check('the earlier invite is revoked', create.indexOf('revokeInviteCode') >= 0, true);
+  check('it is revoked BEFORE the new code is minted',
+    create.indexOf('revokeInviteCode') < create.indexOf('createInviteCode'), true);
+  check('the superseded code is forgotten locally too', create.indexOf('dropPendingInvite') >= 0, true);
+  check('revoking sets the flag the join path already checks',
+    /revoked\s*:\s*!0|revoked\s*:\s*true/.test(extractAsyncFn('revokeInviteCode')), true);
+  check('a revoked code is refused at redemption', /revoked[\s\S]{0,40}revoked/.test(extractAsyncFn('lookupInvite')), true);
+})();
+
+section('A live join code never leaves the owner');
+/* pendingInvites holds unredeemed codes. Everything not in LEDGER_LOCAL_KEYS
+   is copied into the ledger document, which every member reads — so leaving it
+   off that list would publish the owner's codes to every viewer in the ledger,
+   and a viewer passing a join code on is exactly what v96 closed. */
+(function () {
+  check('pendingInvites is on the never-share list',
+    extractConstLine('const LEDGER_LOCAL_KEYS=').indexOf('pendingInvites') >= 0, true);
+  const p = { id: 'k1', name: 'Trip', type: 'project', ledgerId: 'lg_9', role: 'owner',
+              shared: true, history: [],
+              pendingInvites: [{ code: 'T7KM2X', role: 'editor', participant: 'Diana',
+                                 createdAt: 1, expiresAt: Date.now() + 86400000 }] };
+  check('the ledger copy carries no codes', 'pendingInvites' in SH.ledgerDataOf(p), false);
+  const stub = SH.stubOf(p);
+  check('the owner’s own stub does carry them', (stub.pendingInvites || []).length, 1);
+  const stale = SH.stubOf({ id: 'k2', name: 'Trip', ledgerId: 'lg_9', role: 'owner', shared: true,
+    pendingInvites: [{ code: 'OLDCOD', role: 'viewer', participant: 'Sam', createdAt: 1, expiresAt: Date.now() - 1000 }] });
+  check('an expired code is not carried forward', (stale.pendingInvites || []).length, 0);
+})();
+
+section('Team Details opens closed on a group project');
+/* Rachel, 10 Sep 2026: five person cards sat open under Settle Up and pushed
+   the history a screen and a half down. "Team", not "Member", because on a
+   SHARED group project "member" already means someone with access to the
+   ledger, which is a different set of people from the trip's participants. */
+(function () {
+  const rpd = extractFn('renderProjectDetail');
+  check('the section is named Team Details', rpd.indexOf('Team Details') >= 0, true);
+  check('the old always-open People heading is gone', rpd.indexOf('>People<') >= 0, false);
+  check('it is a control, not a label', rpd.indexOf('togglePeopleDetails') >= 0, true);
+  check('the cards start hidden', /peopleDetailsBox[\s\S]{0,120}display:none/.test(rpd), true);
+  check('the toggle exists and flips the state', /function togglePeopleDetails/.test(src), true);
+  check('the collapsed state is not persisted to the project',
+    extractFn('togglePeopleDetails').indexOf('saveProject') >= 0, false);
+  check('the row still says how many people are in there',
+    /Team Details · [^<]*\+/.test(rpd), true);
 })();
 
 /* ============================ RESULTS ============================ */
