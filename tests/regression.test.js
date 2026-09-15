@@ -616,11 +616,15 @@ let _pushed = false;
 function pushDirtyLedgers() { _pushed = true; }
 // Tombstones are only kept for SHARED ledgers, so this section has to run as an
 // account that has sharing unlocked. Restored at the end of the section.
+// THIS USED TO LIFT THE FIRST ADDRESS OUT OF SHARING_ALLOWED_ACCOUNTS, which
+// stopped working the day the gate came off (11 Sep 2026) and the list went
+// empty — it produced an account with no email and no uid, which reads as a
+// guest, and three tombstone tests failed as though the tombstone logic had
+// broken. The fix is the general lesson: set up the CONDITION the code cares
+// about (a signed-in account), never scrape it out of a constant that exists
+// for a different reason.
 const _savedUser = currentUser;
-currentUser = {
-  email: (/SHARING_ALLOWED_ACCOUNTS\s*=\s*\[\s*['"]([^'"]+)/.exec(src) || [, ''])[1],
-  isAnonymous: false,
-};
+currentUser = { uid: 'TOMBSTONE_UID', email: 'owner@example.com', isAnonymous: false };
 const applySnapshot = new Function('p', global.__SNAP_DATA_VAR__, 'ctx',
   'with(ctx){' + global.__SNAP__ + '} return p;');
 function snapshot(p, serverData) {
@@ -2078,39 +2082,48 @@ section('New Activity / New Project forms pair short fields');
    exactly as it did before, and the second re-evaluates the same functions in
    a sandbox where the flag is ON, so the sharing logic itself is covered
    before it is ever switched on for a real user. */
-section('Sharing is invisible to everyone except the named test accounts');
+/* THE GATE CAME OFF ON 11 SEP 2026 (Rachel). Until then this block asserted the
+   opposite of what it asserts now — that the allowlist held exactly eight named
+   accounts and that everybody else was locked out. Sharing is now open to every
+   signed-in account, so the thing worth protecting changed with it.
+
+   THE PROPERTY THAT NEARLY DISAPPEARED WITHOUT ANYONE NOTICING. While the list
+   had names in it, "a guest session is never unlocked" came free: a guest has
+   no email, so the indexOf could never match, and the comment in index.html
+   said as much. Emptying the list to open the rollout would have returned true
+   for guests too — silently, with no test failing, because the test that
+   covered it was written against the mechanism rather than the property. It is
+   now asserted directly, and the empty-list branch says signed-in out loud. */
+section('Sharing is open to every signed-in account, and to no guest');
 (function () {
-  // THIS IS THE GUARD THAT PROTECTS REAL USERS. Sharing ships enabled but
-  // gated to an allowlist; for every other account the app must behave exactly
-  // as v92 did. Quote style and spacing change when the file is minified, so
-  // every source-level assertion is written to survive that.
   const LIST = /SHARING_ALLOWED_ACCOUNTS\s*=\s*\[([^\]]*)\]/.exec(src)[1];
   const entries = (LIST.match(/['"][^'"]+['"]/g) || []).map(x => x.slice(1, -1));
-  check('the allowlist is not empty — sharing is NOT open to everyone',
-    entries.length > 0, true);
-  // The named testers. Bump this deliberately when the list changes - it is
-  // here so an accidental edit to the allowlist cannot pass unnoticed.
-  check('exactly eight accounts are named', entries.length, 8);
-  check('every entry is an email address',
-    entries.every(e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)), true);
-  // The gate itself.
-  check('a signed-in user who is not on the list is locked out',
-    sharingUnlocked(), false);
-  check('an anonymous session is locked out',
-    (function () { const u = currentUser; currentUser = { isAnonymous: true };
+  check('the allowlist is empty — sharing is open to everyone signed in',
+    entries.length, 0);
+  check('the feature itself is still on',
+    /SHARING_ENABLED\s*=\s*(true|!0)/.test(src), true);
+  check('a signed-in account is unlocked',
+    (function () { const u = currentUser; currentUser = { uid: 'u1', email: 'anyone@example.com', isAnonymous: false };
+      const r = sharingUnlocked(); currentUser = u; return r; })(), true);
+  /* THE ONE THAT MATTERS. A shared group needs an account to hang permission
+     on, so a guest must stay exactly where v92 left them. */
+  check('a guest session is still locked out',
+    (function () { const u = currentUser; currentUser = { uid: 'a1', isAnonymous: true };
       const r = sharingUnlocked(); currentUser = u; return r; })(), false);
-  check('a listed account is unlocked',
-    (function () { const u = currentUser; currentUser = { email: entries[0], isAnonymous: false };
+  check('so is no session at all',
+    (function () { const u = currentUser; currentUser = null;
+      const r = sharingUnlocked(); currentUser = u; return r; })(), false);
+  /* And the account with no email at all — a provider that hides it — is still
+     let in, because the empty-list branch asks about the ACCOUNT, not the
+     address. Written as a separate check because keying that branch on email
+     was the tempting version of this change and would have failed here. */
+  check('a signed-in account with no email address is still unlocked',
+    (function () { const u = currentUser; currentUser = { uid: 'u2', isAnonymous: false };
       const r = sharingUnlocked(); currentUser = u; return r; })(), true);
-  check('the match ignores capitals',
-    (function () { const u = currentUser; currentUser = { email: entries[0].toUpperCase(), isAnonymous: false };
-      const r = sharingUnlocked(); currentUser = u; return r; })(), true);
-  // Whitespace is stripped before matching, so "return true" reads as
-  // "returntrue"; the minifier turns it into "return!0". Accept both.
-  check('emptying the list would open it to everyone (the rollout switch)',
-    /if\(!SHARING_ALLOWED_ACCOUNTS\.length\)return(true|!0)/.test(src.replace(/\s+/g, '')), true);
-  // And the consequence: for everyone else nothing changed.
-  check('a shared ledger flips nothing for a user who is not unlocked',
+  /* The rollback route, kept honest: putting addresses back must still gate. */
+  check('putting addresses back would gate it again',
+    /SHARING_ALLOWED_ACCOUNTS\.indexOf\(/.test(extractFn('sharingUnlocked')), true);
+  check('a shared group flips nothing for a user who is not unlocked',
     _flipView({ shared: true, ledgerId: 'lg_1', role: 'viewer', type: 'fixed' }), false);
   check('an ordinary pay activity still reads as pay', isPay({ direction: 'pay' }), true);
   check('an ordinary earn activity still reads as earn', isPay({ direction: 'earn' }), false);
@@ -2122,6 +2135,13 @@ var SH = (function () {
   const on = [
     'const SHARING_ENABLED=true;',
     'const SHARING_ALLOWED_ACCOUNTS=[];',   // unlocked, to exercise the logic itself
+    // AND A SIGNED-IN ACCOUNT TO GO WITH IT (11 Sep 2026). An empty allowlist
+    // is no longer sufficient on its own: since the gate came off, the empty
+    // branch of sharingUnlocked asks whether anybody is signed in, so a sandbox
+    // with no currentUser at all reads as a guest and every sharing check below
+    // silently returns the unshared answer. Twelve tests failed as one when
+    // this was missing, all of them in ways that looked like sharing bugs.
+    'var currentUser={uid:"SANDBOX_UID",email:"sandbox@example.com",isAnonymous:false};',
     extractFn('sharingUnlocked'),
     extractConstLine('const LEDGER_ALPHABET='),
     extractConstLine('const LEDGER_LOCAL_KEYS='),
@@ -2152,9 +2172,23 @@ var SH = (function () {
     extractFn('_projNewer'),
     extractFn('mergeProjectPair'),
     extractFn('reconcileLedgerHistory'),
+    // The participant-slot answer (11 Sep 2026). _lgMeta is the members cache
+    // the real app fills from a ledger snapshot; here it is an empty object a
+    // test seeds through __setMeta, which is the only reason that setter exists.
+    'var _lgMeta={};',
+    'function __setMeta(id,m){_lgMeta[id]=m}',
+    // ownerParticipantSlot reads settings.name, and the sandbox's settings is
+    // fixed at 'Mike' for the one-to-one flip tests above. This lets a test say
+    // who is signed in without disturbing them.
+    'function __setName(n){settings.name=n}',
+    extractFn('pendingInvites'),
+    extractFn('_slotKey'),
+    extractFn('ownerParticipantSlot'),
+    extractFn('openParticipantSlots'),
     'return {_flipView,isPay,otherName,payerName,receiverName,paidBtnLabel,balLabel,reconcileLedgerHistory,' +
     'isShared,ledgerRole,canEditLedger,isLedgerOwner,canAdminLedger,ledgerDataOf,stubOf,' +
-    'canWriteEntries,requireEditRights,entryRowAttrs,' +
+    'canWriteEntries,requireEditRights,entryRowAttrs,__setMeta,__setName,' +
+    'ownerParticipantSlot,openParticipantSlots,' +
     'normalizeJoinCode,isWellFormedCode,mergeProjectPair};'
   ].join('\n');
   return new Function('settings', 'cur', 'rd2', on)({ name: 'Mike' }, function () { return '$'; }, function (n) { return n; });
@@ -2387,13 +2421,202 @@ section('A viewer cannot edit an entry');
     /showEntryActions\('e1'\)/.test(SH.entryRowAttrs(mk('editor'), 'showEntryActions', 'e1')), true);
 })();
 
+/* ---- THE 11 SEPTEMBER 2026 REPORTS ----------------------------------------
+   Four things Rachel found by sharing a real group with two real people, and
+   each one is a different KIND of fault, which is why they are pinned together.
+
+   Two of them are controls a non-owner could see. Both had guards behind them
+   that worked — the write was always refused — so nothing was ever corrupted;
+   what was wrong is that the app OFFERED an action it would then refuse, which
+   design section 9 rejects as loudly as it rejects a missing guard.
+
+   AND THE REASON BOTH SLIPPED THROUGH applyRoleLockdown. That function hides
+   things two ways: a CSS selector over `.detail-actions`, and a list of element
+   ids. The group screen's "Settle All & Reset" sits in a bare <div> outside
+   `.detail-actions` and carries no id, so neither half could reach it — while
+   #settleResetBtn, the OTHER settle control on the detail screen, was gated
+   correctly and made the gating look done. The lesson is in the test below:
+   assert that the button is not RENDERED, not that something hid it. */
+section('A non-owner is not offered the owner-only controls (11 Sep 2026)');
+(function () {
+  const render = extractFn('renderProjectDetail');
+  /* HOW THIS IS WRITTEN, AND WHY IT IS NOT WRITTEN THE OBVIOUS WAY. The first
+     draft matched `canAdminHere(p))actionsHtml+=` on whitespace-stripped source
+     and was green on the master and meaningless on the shipped file, because
+     `actionsHtml` is a local and the minifier owns every local name. So the
+     anchor is the BUTTON'S LABEL — a string literal, which survives — and the
+     assertion is that a canAdminHere call sits close in front of it.
+     `canAdminHere` itself is a top-level function name and is in the reserved
+     list, so it survives too. */
+  const guardsLabel = function (fnSrc, label, within) {
+    const at = fnSrc.indexOf(label);
+    if (at < 0) return 'label not found: ' + label;
+    const before = fnSrc.slice(Math.max(0, at - (within || 300)), at);
+    return /canAdminHere\(/.test(before) ? true : 'no admin guard within ' + (within || 300) + ' chars';
+  };
+  check('Settle All & Reset is not built unless the viewer may admin',
+    guardsLabel(render, 'Settle All &amp; Reset'), true);
+  check('and it is the same predicate that refuses the write',
+    /canAdminHere\(/.test(extractFn('doSettleReset')), true);
+  /* Splitting costs / Just tracking rewrites what the group MEANS for every
+     member at once, so it is owner-only too — not merely editor-writable. */
+  check('the Splitting / Just tracking toggle is behind the admin predicate',
+    guardsLabel(render, 'Splitting costs', 600), true);
+  check('toggleSettleMode still refuses a non-owner behind the hidden control',
+    /canAdminHere\(/.test(extractFn('toggleSettleMode')), true);
+  /* A MEMBER STILL GETS TO KNOW WHICH MODE THEY ARE IN. Hiding the control is
+     not the same as hiding the fact, so the caption is printed on both sides of
+     the branch. Proving that without naming the local it is held in: read the
+     name back OUT of the assignment, then count its uses. One write and two
+     reads means both branches print it; the caption text is quoted here only as
+     the anchor for finding the assignment, because string literals survive. */
+  const capt = /([\w$]+)\s*=\s*[\w$.]+\s*\?\s*["']Tracking spending only/.exec(render) || [];
+  check('the mode caption is computed once, into one local', !!capt[1], true);
+  check('and both branches — toggle and no toggle — print it',
+    capt[1] ? (render.split(capt[1]).length - 1) >= 3 : false, true);
+})();
+
+/* ---- "Invite someone" with nobody left to invite -------------------------
+   Rachel's group named three participants; two had joined and she held the
+   third slot herself, and the button was still there. Behind it: a dialog of
+   greyed-out names and no way forward.
+
+   The visible fault was the button. The fault UNDER it was that the app could
+   not tell the owner held a slot at all — ensureLedger wrote the owner's member
+   record from settings.name, which lines up with a participant only by
+   coincidence and was compared case-sensitively. Fixing only the button would
+   have left a group where the owner's own name could be invited to. */
+section('Every participant slot is accounted for, including the owner\'s');
+(function () {
+  const P = (parts, pend) => ({ id: 'p1', shared: true, ledgerId: 'L9', role: 'owner',
+                                name: 'Ski trip', participants: parts,
+                                pendingInvites: pend || [] });
+  const members = (names) => {
+    const m = {};
+    names.forEach((n, i) => { m['u' + i] = { role: i ? 'editor' : 'owner', name: n }; });
+    return { members: m };
+  };
+  const FUTURE = Date.now() + 86400000, PAST = Date.now() - 86400000;
+
+  /* The owner's slot, matched case-insensitively but returned in the
+     PARTICIPANT LIST's spelling — that spelling is what every comparison
+     downstream is made against, so returning the profile's casing would put
+     the original bug straight back. */
+  SH.__setName('rachel');   // deliberately lower-case; the list is not
+  check('the owner takes the participant slot that bears their name',
+    SH.ownerParticipantSlot({ participants: ['Rachel', 'Sabine', 'Diana'] }), 'Rachel');
+  check('the match ignores capitals but keeps the list\'s spelling',
+    SH.ownerParticipantSlot({ participants: ['RACHEL', 'Sabine'] }), 'RACHEL');
+  check('a name that is nobody\'s participant claims no slot',
+    SH.ownerParticipantSlot({ participants: ['Sabine', 'Diana'] }), '');
+  check('a one-to-one group names no participants and has no slot to take',
+    SH.ownerParticipantSlot({ participants: [] }), '');
+  SH.__setName('Mike');     // restore, so nothing after this sees 'rachel'
+
+  /* null is not the same answer as [] and the difference is the whole point:
+     a group that names nobody can always be invited into, a group whose names
+     are all spoken for cannot. */
+  check('a group with no named participants never runs out of slots',
+    SH.openParticipantSlots(P([])), null);
+
+  SH.__setMeta('L9', members(['Rachel']));
+  check('with only the owner in, the other two are still open',
+    SH.openParticipantSlots(P(['Rachel', 'Sabine', 'Diana'])).join(','), 'Sabine,Diana');
+
+  SH.__setMeta('L9', members(['Rachel', 'Sabine', 'Diana']));
+  check('once all three have joined, nobody is left to invite',
+    SH.openParticipantSlots(P(['Rachel', 'Sabine', 'Diana'])).length, 0);
+
+  /* AN INVITE THAT IS OUT HOLDS ITS SLOT. Without this the last name looked
+     open right up until the moment it was accepted, which is how one slot
+     used to end up with two live codes. */
+  SH.__setMeta('L9', members(['Rachel']));
+  check('an unaccepted invite holds the slot it was sent for',
+    SH.openParticipantSlots(P(['Rachel', 'Sabine', 'Diana'],
+      [{ code: 'AAA111', participant: 'Sabine', expiresAt: FUTURE }])).join(','), 'Diana');
+  check('an EXPIRED invite releases it again',
+    SH.openParticipantSlots(P(['Rachel', 'Sabine', 'Diana'],
+      [{ code: 'AAA111', participant: 'Sabine', expiresAt: PAST }])).join(','), 'Sabine,Diana');
+  check('a member joined under different capitals still fills the slot',
+    SH.openParticipantSlots(Object.assign(P(['Rachel', 'sabine', 'Diana']), {})).join(','),
+    'sabine,Diana');
+
+  /* And the screens that ask the question. Both must ASK it rather than count
+     members themselves — counting members is what each of them used to do. */
+  const sheet = extractFn('showLedgerMembers');
+  check('the members sheet asks before offering Invite someone',
+    /openParticipantSlots\(/.test(sheet), true);
+  check('and says so plainly when there is nobody left',
+    /has joined or been invited/.test(sheet), true);
+  check('the invite flow guards the same way behind the hidden button',
+    /openParticipantSlots\(/.test(extractFn('startInviteFlow')), true);
+  check('the participant picker marks an invited name differently from a joined one',
+    /invited, waiting/.test(extractFn('showInviteParticipantPick')), true);
+  check('the owner is bound to their slot at the moment the group is shared',
+    /ownerParticipantSlot\(/.test(extractFn('ensureLedger')), true);
+})();
+
+/* ---- "Ledger" is not a word users should meet (Rachel, 11 Sep 2026) -------
+   It stays everywhere in the CODE — it is the right name for the document, the
+   listener and the cache, and renaming those would be churn with no reader.
+   What changed is every string a user can read. This test is written against
+   the rendered strings only, which is also why it can run on the minified
+   build: string literals survive minification, local names do not. */
+section('No screen says "ledger" to a user');
+(function () {
+  /* HOW THIS FINDS COPY WITHOUT PARSING JAVASCRIPT. Pulling string literals out
+     with a regex worked on the readable master and produced nonsense on the
+     shipped file — one long line, an apostrophe inside some label, and the
+     quote-matching desynchronises for a thousand characters. So this does not
+     try to find strings at all. It looks for `ledger` as a WHOLE WORD, which
+     is the shape the word only ever has in prose:
+
+       ledgerId, showLedgerMembers, canAdminLedger   — a word character follows
+       or precedes, so \b does not match them at all, and no list is needed.
+       'ledgers', 'ledger-gone', 'ledger-app-data'   — real standalone words in
+       code, and the only ones, so they are named below.
+
+     Comments are the one thing that can produce a false positive, and only on
+     the readable master: terser strips them, so the shipped file has none. */
+  const code = src
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .split('\n').map(function (l) {
+      const i = l.indexOf('//');
+      /* Only strip // where nothing quoted precedes it, so a URL inside a
+         string survives — and so the shipped file, whose single line always
+         has a quote before its first //, is left entirely alone. */
+      return (i >= 0 && !/['"]/.test(l.slice(0, i))) ? l.slice(0, i) : l;
+    }).join('\n');
+  const ALLOWED = /^(ledger-gone|ledger-app-data|ledger-timers|ledger-settings)$/;
+  const offenders = [];
+  const re = /[A-Za-z0-9_$]?ledger([A-Za-z0-9_$-]*)/gi;
+  let m;
+  while ((m = re.exec(code)) !== null) {
+    if (/[A-Za-z0-9_$]/.test(m[0][0])) continue;              // …Ledger… inside a name
+    const word = ('ledger' + (m[1] || '')).toLowerCase();
+    if (word !== 'ledger' && !ALLOWED.test(word)) continue;    // ledgerId, ledgers, …
+    const ctx = code.slice(Math.max(0, m.index - 70), m.index + 70).replace(/\s+/g, ' ');
+    if (ALLOWED.test(word)) continue;
+    /* A console message is not a screen. Named one at a time on purpose, so a
+       new one has to be looked at rather than pattern-matched away. */
+    if (/handling on deletion failed|Ledger listen error|Ledger write failed|refused to empty a shared ledger/.test(ctx)) continue;
+    offenders.push(ctx);
+  }
+  check('no user-facing string contains the word', offenders.join(' | '), '');
+  /* The button that prompted it, and the two replacements most likely to be
+     "corrected" back by someone reading the design document. */
+  check('leaving says group', /Leave this group/.test(src), true);
+  check('the viewer refusal says group', /you can't change this group|you can’t change this group/.test(src), true);
+  check('the settle refusal says group', /can settle and reset this group/.test(src), true);
+})();
+
 section('Failures name the actual reason, never just "invalid code"');
 (function () {
   check('expired', /has expired/.test(src), true);
   check('already used', /already been used/.test(src), true);
   check('withdrawn by the owner', /withdrawn by the person who sent it/.test(src), true);
   check('no such code', /No invite with that code/.test(src), true);
-  check('already a member', /already a member of that ledger/.test(src), true);
+  check('already a member', /already a member of that group/.test(src), true);
 })();
 
 /* ---- The 4 Sep 2026 bug: a snapshot erased an unpushed entry --------------
