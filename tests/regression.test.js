@@ -1898,7 +1898,10 @@ check('activity with counterparty unchanged',
 // The solo-project WhatsApp summary must DROP the "Between X and Y" clause
 // when there is no counterparty, not print a stand-in for it.
 (function () {
-  const share = extractFn('showShareSummary');
+  // 16 Sep 2026: showShareSummary became the three-way chooser and the text it
+  // used to build moved into buildShareSummaryText. Same two requirements,
+  // asserted against the function that now holds the copy.
+  const share = extractFn('buildShareSummaryText');
   check('share: the Between clause is guarded by hasOther',
     /hasOther\(p\)\)\s*\w+\+=.Between /.test(share), true);
   check('share: the paid line has an unnamed fallback',
@@ -1911,6 +1914,158 @@ check('activity with counterparty unchanged',
   const pay = extractFn('confirmProjectPay');
   check('project pay note falls back to a neutral phrase',
     /hasOther\(p\)\?[^;]*Payment received/.test(pay), true);
+})();
+
+/* ==========================================================================
+   v100 - USER FEEDBACK, 16 Sep 2026
+   ========================================================================== */
+
+/* ---- THE VIEWER SAW THE WRONG DASHBOARD (the one that mattered) ----
+   A solo PAYING project shared as viewer rendered the EARNING dashboard on the
+   viewer's phone: "Total Earned 0 / Spent 155 / Net Loss 155", where the owner
+   correctly saw "Total Spent 155". _flipView is the design-section-10
+   perspective flip, and it excluded group and lending but not `project`. A
+   solo project is neither, and has no participants, so it flipped - and
+   flipping isPay() inverts the project's DIRECTION.
+   Behavioural, because the minifier renames every local in these functions. */
+section('The perspective flip only applies where there are two sides');
+(function () {
+  const mk = (on) => new Function('sharingUnlocked',
+    extractFn('_flipView') + '; return _flipView;')(() => on);
+  const flip = mk(true);
+  const viewer = (type) => ({ type, shared: true, ledgerId: 'lg1', role: 'viewer', participants: [] });
+
+  check('a solo PROJECT never flips - direction belongs to the project',
+    flip(viewer('project')), false);
+  check('a one-to-one hourly activity does flip', flip(viewer('hourly')), true);
+  check('daily flips', flip(viewer('daily')), true);
+  check('fixed flips', flip(viewer('fixed')), true);
+  check('customrate flips', flip(viewer('customrate')), true);
+  check('group never flips', flip(viewer('group')), false);
+  check('lending never flips', flip(viewer('lending')), false);
+  check('an UNKNOWN type added later cannot inherit the flip',
+    flip(viewer('somethingnew')), false);
+  check('the owner never flips',
+    flip(Object.assign(viewer('hourly'), { role: 'owner' })), false);
+  check('a multi-participant item never flips',
+    flip(Object.assign(viewer('hourly'), { participants: ['A', 'B'] })), false);
+  check('nothing flips while sharing is off', mk(false)(viewer('hourly')), false);
+
+  // And the consequence, which is what the user actually saw.
+  const isPay = new Function('_flipView',
+    extractFn('isPay') + '; return isPay;')(flip);
+  const payingProject = viewer('project'); payingProject.direction = 'pay';
+  check('a viewer of a paying project still gets the PAYING dashboard',
+    isPay(payingProject), true);
+  const earningProject = viewer('project'); earningProject.direction = 'earn';
+  check('a viewer of an earning project still gets the EARNING dashboard',
+    isPay(earningProject), false);
+})();
+
+/* ---- "I Paid" DID NOT READ AS A BUTTON ----
+   The control is a solid full-width green button, so the styling was never the
+   problem: "I Paid" is a statement about the past where every other action in
+   the app is an instruction. Projects now use the app's own verb. Activities
+   keep the first-person wording, because there it says which side of a
+   two-person balance you are on. */
+section('Project action buttons are instructions, not statements');
+(function () {
+  const label = new Function('isPay',
+    extractFn('paidBtnLabel') + '; return paidBtnLabel;')((p) => p.direction !== 'earn');
+  check('a paying project says Add Expense',
+    label({ type: 'project', direction: 'pay' }), 'Add Expense');
+  check('an earning project says Received Payment',
+    label({ type: 'project', direction: 'earn' }), 'Received Payment');
+  check('an activity keeps I Paid', label({ type: 'hourly', direction: 'pay' }), 'I Paid');
+  check('an activity keeps I Got Paid', label({ type: 'hourly', direction: 'earn' }), 'I Got Paid');
+  check('the counterparty view of an activity is unchanged',
+    label({ type: 'hourly', direction: 'pay' }, 'them'), 'I Got Paid');
+  // The icon is the other half of the affordance: + is what the app uses for
+  // "add one of these", and $ read as a currency label.
+  check('the project button carries the add glyph',
+    /btn-icon">＋<\/span> '\+esc\(paidBtnLabel/.test(src), true);
+})();
+
+/* ---- PARTICIPANTS ARE THE PEOPLE SHARING THE COST ----
+   A user listed everyone who came on the outing, not everyone who was paying,
+   and the split then came out wrong. */
+section('Who to list as a participant');
+(function () {
+  check('the project form says sharing the cost', /sharing the cost<\/b>/.test(src), true);
+  check('the project form rules out mere attendance',
+    /someone who owes nothing does not belong here/.test(src), true);
+  check('the vague old hint is gone',
+    /Add everyone involved — including yourself/.test(src), false);
+  check('the label asks the question directly',
+    /Who is splitting the cost\?/.test(src), true);
+})();
+
+/* ---- SECTION IS NOT ASKED AT CREATION ----
+   A user typed "Flights" into Section believing it was a category. Sections are
+   a home-screen filing device; being asked before anything exists invites the
+   mistake. The selects are REMOVED, not hidden, so there is no dead control. */
+section('Sections are filed on the home screen, not asked at creation');
+(function () {
+  check('the activity form has no section select', /id="fGroup"/.test(src), false);
+  check('the project form has no section select', /id="pfGroup"/.test(src), false);
+  check('the lending form has no section select', /id="lfGroup"/.test(src), false);
+  // The save paths must survive the element being gone, or creating anything
+  // throws on a null .value.
+  // saveProjectForm is the PROJECT form; saveProject is the ACTIVITY form.
+  // The names do not match the screens, which is worth knowing before editing.
+  ['saveProjectForm', 'saveProject', 'saveLendingCircle'].forEach((fn) => {
+    const body = extractFn(fn);
+    if (/getElementById\((['"])(pf|lf|f)Group\1\)/.test(body)) {
+      // SHAPE, NOT NAME. The guard variable is a local, so the minifier renames
+      // it: matching `_gSel?_gSel.value:` passed on the master and matched
+      // nothing on the shipped file. \w+ matches whatever terser calls it.
+      check(fn + ': reads the missing section select defensively',
+        /\?\w+\.value:/.test(body), true);
+    }
+  });
+  check('sections can still be created on the home screen',
+    /New Section/.test(src) && /Create Section/.test(src), true);
+})();
+
+/* ---- THREE WAYS TO SHARE, NAMED IN PLAIN WORDS ----
+   Since v98, showShareSummary went straight to startInviteFlow, so the
+   text-only summary was unreachable - the commonest thing you want to do. And
+   the role picker named roles ("Viewer", "Editor") which mean nothing to
+   somebody who has not joined yet. */
+section('Three share options');
+(function () {
+  const chooser = extractFn('showShareChoice');
+  check('option 1 sends the balance only', /Send the balance only/.test(chooser), true);
+  check('option 1 says they get no access',
+    /no access to this tracker/.test(chooser), true);
+  check('option 2 is described by what they can do, not by a role name',
+    /they can look/.test(chooser), true);
+  check('option 3 is described by what they can do',
+    /they can add entries/.test(chooser), true);
+  check('the options do not lead with the word Viewer',
+    /font-weight:700">👁 Viewer/.test(chooser), false);
+  check('option 2 passes the role straight through',
+    /startInviteFlow\([^)]*viewer/.test(chooser), true);
+  check('option 3 passes the role straight through',
+    /startInviteFlow\([^)]*editor/.test(chooser), true);
+
+  const entry = extractFn('showShareSummary');
+  check('the share button opens the chooser rather than an invite',
+    /showShareChoice\(/.test(entry), true);
+  check('someone who cannot mint a code still gets the balance text',
+    /buildShareSummaryText\(/.test(entry), true);
+
+  // Having chosen the role up front, nobody should be asked for it again.
+  // `role` is a parameter and therefore renamed by the minifier, so these
+  // assert on the GLOBAL function names the branches call - those survive.
+  const flow = extractFn('startInviteFlow');
+  check('a preselected role can go straight to creating the invite',
+    /doCreateInvite\(/.test(flow), true);
+  check('with no role preselected the role question is still asked',
+    /showInviteRolePick\(/.test(flow), true);
+  const pick = extractFn('pickInviteParticipant');
+  check('picking a participant can go straight to creating the invite',
+    /doCreateInvite\(/.test(pick), true);
 })();
 
 /* ---- Category examples cover trips as well as builds (27 Aug 2026) ----
@@ -2397,13 +2552,21 @@ section('Sharing is always an invite, and it says what it is');
      string as double-quoted, so a check that spells the quote passes on the
      master and fails on the shipped file — which is the whole point of running
      this suite twice. Q matches either. */
+  /* 16 Sep 2026: THE MESSAGE WAS SHORTENED, on user feedback that it was too
+     long, and the "Already have Tally? Tap here to auto-fill your code" block
+     was removed outright. It was the longest part of the message AND the
+     autofill never actually happened, so it sent people looking for something
+     that did not occur. These four assertions moved with the copy. */
   check('the code says how long it lasts and that it is single use',
-    new RegExp('valid for ' + Q + '\\+INVITE_DAYS\\+' + Q + ' days, 1-time use').test(src), true);
-  check('the message carries a tap-through link', /\?join=/.test(src), true);
+    new RegExp('valid ' + Q + '\\+INVITE_DAYS\\+' + Q + ' days, one use').test(src), true);
+  check('the invite no longer promises autofill it cannot deliver',
+    /Tap here to auto-fill your code/.test(src), false);
   check('the message tells a new user where to type the code',
-    /Access Your Invites ➔ enter/.test(src), true);
-  check('the message names both stores for a new user',
-    /Get it free on the App Store or Google Play/.test(src), true);
+    /at the bottom of the home screen and enter the code/.test(src), true);
+  check('the message still points a new user at the download',
+    /Get Tally free/.test(src), true);
+  check('the invite is shorter: the two-route New\/Already split is gone',
+    /New to Tally\?/.test(src), false);
   check('someone who already joined gets a link, not a fresh code',
     /\?open=/.test(src), true);
   check('the entry screen exists', /Access Your Invites/.test(src), true);
