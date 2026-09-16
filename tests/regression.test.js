@@ -3311,6 +3311,239 @@ section('/get/ sends a phone to its own store');
   check('the Play id is unchanged', get.indexOf('io.github.tallytracker.twa') >= 0, true);
 })();
 
+
+/* ======================================================================
+   v103 — TWO THINGS RACHEL ASKED FOR ON 16 SEP 2026
+   ====================================================================== */
+
+section('The share options look like the rest of the app');
+/* Rachel: "dont make them in black. keep them light in color like the rest of
+   the app." They were .dialog-btn-save, which is the dark --btn-neutral "ink"
+   button meant for the ONE confirming action in a dialog; three of them stacked
+   read as three black slabs. They are a menu, not a confirmation. */
+(function () {
+  const chooser = extractFn('showShareChoice');
+  check('the three options use the light chooser style',
+    (chooser.match(/share-choice-btn/g) || []).length, 3);
+  check('none of them is an ink button', /dialog-btn-save/.test(chooser), false);
+  check('Cancel is still the outlined button', /dialog-btn-cancel/.test(chooser), true);
+  /* THE STYLE ITSELF, or the class name would be an empty promise. Card
+     background and a border, exactly like the home screen's action buttons —
+     and --card flips with the theme, so this is right in dark mode too. */
+  const rule = (src.match(/\.share-choice-btn\{[^}]*\}/) || [''])[0];
+  check('the chooser style exists', rule.length > 0, true);
+  check('it takes the card background', /background:var\(--card\)/.test(rule), true);
+  check('it is bordered, not filled', /border:1\.5px solid var\(--border\)/.test(rule), true);
+  check('it does not reach for the ink colour', /btn-neutral/.test(rule), false);
+  /* AND .dialog-btn-save IS UNTOUCHED. Every other dialog in the app still
+     depends on it; the fix was a new class, not a repaint of that one. */
+  check('the ink button is still the ink button for everything else',
+    /\.dialog-btn-save\{[^}]*background:var\(--btn-neutral\)/.test(src), true);
+})();
+
+section('Sections are edited where they are');
+/* Rachel, 16 Sep 2026, on making sections "more intuitive": remove the
+   "+ Section" button from the home screen, remove the per-section totals,
+   replace the "⋯" menu with a remove and an add icon, and rename a section by
+   tapping its name. */
+(function () {
+  const render = extractFn('renderProjects');
+  const actions = extractFn('homeActionsHtml');
+
+  /* ---- what went ---- */
+  check('the home screen no longer offers a Section button',
+    /act-badge slate/.test(actions), false);
+  check('and does not call the New Section dialog from there',
+    /openNewGroup/.test(actions), false);
+  check('the per-section total is gone', /group-total/.test(src), false);
+  check('so is the signed roll-up that fed it', /totalSigned/.test(src), false);
+  check('but per-card figures still use userSignedValue',
+    /function userSignedValue/.test(src), true);
+  /* MATCH THE MARKUP, NOT THE CHARACTER. The comment above this control in
+     index.html names the "⋯" it replaced, and the minifier strips comments - so
+     a bare search for the glyph fails on the readable master and passes on the
+     shipped build. The old button rendered as >⋯</button>. This caught itself. */
+  check('the "⋯" menu is gone', />⋯</.test(render), false);
+  check('the Edit Section dialog is gone with it',
+    /function editGroup/.test(src), false);
+  check('and its Save handler', /function saveEditGroup/.test(src), false);
+  check('and its Delete handler', /function deleteGroup/.test(src), false);
+
+  /* ---- what arrived ---- */
+  check('a remove control on each section', /removeSection\(/.test(render), true);
+  check('an add control on each section', /addSectionAfter\(/.test(render), true);
+  check('the name itself renames', /startRenameSection\(/.test(render), true);
+  /* THE ＋ ON THE UNGROUPED BLOCK IS NOT A DUPLICATE. The other ＋ lives on a
+     section header, so a user with no sections at all would have nothing to
+     tap and could never make a first one. */
+  check('and a way in when there are no sections yet',
+    /addSectionAtEnd\(\)/.test(render), true);
+  check('which hangs off the always-present ungrouped header',
+    /ungrouped-head/.test(render), true);
+
+  /* ---- the collapse toggle must not swallow the new controls ----
+     The whole header row is onclick=toggleGroup, so every control inside it
+     has to stop the event or renaming a section also folds it shut. */
+  const header = (render.match(/class="group-header"[\s\S]*?class="group-items"/) || [''])[0];
+  ['startRenameSection', 'removeSection', 'addSectionAfter'].forEach((fn) => {
+    const at = header.indexOf(fn);
+    check(fn + ' stops the click reaching the collapse toggle',
+      at > -1 && header.lastIndexOf('event.stopPropagation()', at) > header.lastIndexOf('onclick', at) - 40, true);
+  });
+
+  /* ---- the first section is still reachable for someone with no sections ---- */
+  check('the New Section dialog survives for the empty-state nudge',
+    /function openNewGroup/.test(src) && /Create Section/.test(src), true);
+})();
+
+section('Adding, removing, renaming and undoing a section');
+/* BEHAVIOURAL. Every local in these functions is renamed by the minifier, so
+   the assertions run the real code against a fake DOM and real arrays. The
+   functions are declared inside one generated scope so that `groups = ...`
+   reassignment inside removeSection is visible to the assertions - which is
+   the whole reason this is not five separate extractFn calls. */
+(function () {
+  const build = (state) => {
+    let n = 0;
+    const toast = { innerHTML: '', style: {}, classList: { add() {}, remove() {} } };
+    const input = { value: '', dataset: {}, focus() {}, select() {} };
+    const D = {
+      document: {
+        getElementById: (id) => (id === 'toast' ? toast : id === 'secRenameInput' ? (D._input || null) : null),
+        querySelector: () => null,
+      },
+      db: { saveCollapsedGroups() {} },
+      save() {}, showToast: (m) => D._toasts.push(m),
+      renderHome() {}, renderProjects() {},
+      genId: () => 'new' + (++n),
+      esc: (s) => String(s),
+      startRenameSection: (gid) => { D._renameStartedOn = gid; },
+      _toasts: [], _input: null, _renameStartedOn: null, _toastEl: toast, _mkInput: () => input,
+    };
+    const api = new Function('st', 'D',
+      'var groups=st.groups, projects=st.projects, collapsedGroups=st.collapsedGroups;' +
+      'var _sectionUndo=null;' +
+      'var document=D.document, db=D.db, save=D.save, showToast=D.showToast,' +
+      '    renderHome=D.renderHome, renderProjects=D.renderProjects, genId=D.genId,' +
+      '    esc=D.esc, startRenameSection=D.startRenameSection;' +
+      'function getGroup(id){return groups.find(function(g){return g.id===id})}' +
+      'function getProject(id){return projects.find(function(p){return p.id===id})}' +
+      extractFn('newSectionName') + ';' +
+      extractFn('showSectionUndoToast') + ';' +
+      extractFn('removeSection') + ';' +
+      extractFn('undoRemoveSection') + ';' +
+      extractFn('addSectionAfter') + ';' +
+      extractFn('addSectionAtEnd') + ';' +
+      extractFn('commitRenameSection') + ';' +
+      'return {' +
+      ' removeSection:removeSection, undoRemoveSection:undoRemoveSection,' +
+      ' addSectionAfter:addSectionAfter, addSectionAtEnd:addSectionAtEnd,' +
+      ' commitRenameSection:commitRenameSection,' +
+      ' names:function(){return groups.map(function(g){return g.name})},' +
+      ' count:function(){return groups.length},' +
+      ' orphans:function(){return projects.filter(function(p){return !p.groupId}).map(function(p){return p.id}).sort()},' +
+      ' members:function(gid){return projects.filter(function(p){return p.groupId===gid}).map(function(p){return p.id}).sort()},' +
+      ' collapsedOf:function(gid){return !!collapsedGroups[gid]}}'
+    )(state, D);
+    api.D = D;
+    return api;
+  };
+  const fresh = () => ({
+    groups: [{ id: 'gA', name: 'Work' }, { id: 'gB', name: 'Leisure' }],
+    projects: [
+      { id: 'p1', groupId: 'gA' }, { id: 'p2', groupId: 'gA' },
+      { id: 'p3', groupId: 'gB' }, { id: 'p4', groupId: null },
+    ],
+    collapsedGroups: { gA: true },
+  });
+
+  /* ---- ADD lands where you asked, not at the bottom ---- */
+  let a = build(fresh());
+  a.addSectionAfter('gA');
+  check('a new section lands directly below the one you tapped',
+    a.names(), ['Work', 'New section', 'Leisure']);
+  check('it starts empty', a.members('new1'), []);
+  check('and opens for renaming straight away', a.D._renameStartedOn, 'new1');
+  a.addSectionAfter('gB');
+  check('the last section can be added after too',
+    a.names(), ['Work', 'New section', 'Leisure', 'New section']);
+  /* An id that is no longer there must not silently prepend. */
+  const b = build(fresh());
+  b.addSectionAfter('nope');
+  check('an unknown id appends rather than guessing',
+    b.names(), ['Work', 'Leisure', 'New section']);
+  const c = build(fresh());
+  c.addSectionAtEnd();
+  check('the ungrouped ＋ appends', c.names(), ['Work', 'Leisure', 'New section']);
+  check('and opens that one for renaming', c.D._renameStartedOn, 'new1');
+
+  /* ---- REMOVE takes the section, never its contents ---- */
+  const d = build(fresh());
+  d.removeSection('gA');
+  check('the section is gone', d.names(), ['Leisure']);
+  check('its items are ungrouped, not deleted', d.orphans(), ['p1', 'p2', 'p4']);
+  check('nothing else moved', d.members('gB'), ['p3']);
+  check('undo is offered', /undoRemoveSection/.test(d.D._toastEl.innerHTML), true);
+  check('and the toast says what moved',
+    /2 items moved to Other Activities/.test(d.D._toastEl.innerHTML), true);
+  d.undoRemoveSection();
+  check('undo puts it back in the same position', d.names(), ['Work', 'Leisure']);
+  check('with the same members', d.members('gA'), ['p1', 'p2']);
+  check('and remembers it was collapsed', d.collapsedOf('gA'), true);
+  check('leaving the genuinely loose item loose', d.orphans(), ['p4']);
+
+  /* Removing the LAST section, and an empty one. */
+  const e = build({ groups: [{ id: 'gZ', name: 'Only' }], projects: [{ id: 'p9', groupId: null }], collapsedGroups: {} });
+  e.removeSection('gZ');
+  check('removing the only section is fine', e.count(), 0);
+  check('an empty section says so rather than counting nothing',
+    /it was empty/.test(e.D._toastEl.innerHTML), true);
+  e.undoRemoveSection();
+  check('and it comes back', e.names(), ['Only']);
+  /* Undo twice must not duplicate it. */
+  e.undoRemoveSection();
+  check('undo is not repeatable', e.names(), ['Only']);
+  /* Removing an id that is not there does nothing at all. */
+  const f = build(fresh());
+  f.removeSection('ghost');
+  check('removing an unknown section is a no-op', f.names(), ['Work', 'Leisure']);
+
+  /* ---- RENAME ---- */
+  const g = build(fresh());
+  g.D._input = { value: '  Work & Clients  ', dataset: {} };
+  g.commitRenameSection('gA');
+  check('a new name is trimmed and kept', g.names(), ['Work & Clients', 'Leisure']);
+  check('and it says so once', g.D._toasts.filter((t) => /renamed/.test(t)).length, 1);
+  /* THE DOUBLE-COMMIT THIS GUARDS AGAINST: Enter commits and re-renders, which
+     detaches the input, and the browser may then fire blur on the detached
+     node. The guard lives on the element, not in a module-level flag, because
+     this very suite extracts these functions one at a time - a top-level var
+     would be an undefined free variable in here. */
+  g.commitRenameSection('gA');
+  check('a second commit on the same input changes nothing',
+    g.D._toasts.filter((t) => /renamed/.test(t)).length, 1);
+  /* An empty name is a no-op, not a scolding. The old dialog answered a blank
+     field with "Please enter a name" for tapping a heading and changing your
+     mind. */
+  const h = build(fresh());
+  h.D._input = { value: '   ', dataset: {} };
+  h.commitRenameSection('gA');
+  check('a blank name leaves the section alone', h.names(), ['Work', 'Leisure']);
+  check('and does not scold', h.D._toasts.filter((t) => /enter a name/i.test(t)).length, 0);
+  /* Renaming to the same thing is not an event either. */
+  const i = build(fresh());
+  i.D._input = { value: 'Work', dataset: {} };
+  i.commitRenameSection('gA');
+  check('renaming to the same name says nothing',
+    i.D._toasts.filter((t) => /renamed/.test(t)).length, 0);
+  /* And no input at all must not throw. */
+  const j = build(fresh());
+  j.D._input = null;
+  let threw = null;
+  try { j.commitRenameSection('gA'); } catch (err) { threw = err.message; }
+  check('committing with no field on screen does not throw', threw, 'null');
+})();
+
 /* ============================ RESULTS ============================ */
 Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks).concat(_pushChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
