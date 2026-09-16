@@ -1915,15 +1915,108 @@ check('activity with counterparty unchanged',
 
 /* ---- Category examples cover trips as well as builds (27 Aug 2026) ----
    The Categorize-expenses explainer only ever named building-site
-   categories, which reads as a closed list to someone tracking a trip. */
+   categories, which reads as a closed list to someone tracking a trip.
+   16 Sep 2026: the explainer became a real tool, showCategorizeExpenses, and
+   the examples moved into it. The 27 Aug requirement is unchanged and is
+   asserted against the new home; a rental example was added alongside. */
+section('Categorize is a tool, not a leaflet');
 (function () {
-  const hint = extractFn('showCategorizeHint');
+  const hint = extractFn('showCategorizeExpenses');
   check('category examples: build categories present',
     /Materials/.test(hint) && /Woodwork/.test(hint) && /Appliances/.test(hint), true);
   check('category examples: trip categories present',
     /Flights/.test(hint) && /Hotels/.test(hint) && /Meals/.test(hint) && /Transport/.test(hint), true);
+  check('category examples: rental categories present',
+    /Rent/.test(hint) && /Maintenance/.test(hint) && /Bills/.test(hint), true);
   check('category examples: Utilities dropped', /Utilities/.test(hint), false);
   check('category examples: Cleaning dropped', /Cleaning/.test(hint), false);
+
+  // The whole point of the 16 Sep change: the dialog ASSIGNS, it does not just
+  // describe. These are string literals, so they survive minification; the
+  // old dead end is identified by its lone "Got it" acknowledgement.
+  check('categorize: offers an assign action', /Assign to category/.test(hint), true);
+  check('categorize: lists tickable transactions', /bulk-cat-cb/.test(hint), true);
+  check('categorize: reuses the real category picker',
+    /buildCategoryPicker/.test(hint), true);
+  check('categorize: is no longer an acknowledge-only dialog',
+    /Got it/.test(hint), false);
+  check('categorize: refuses a viewer', /canWriteEntries/.test(hint), true);
+
+  // doBulkCategorize must go through the shared guard rather than writing
+  // directly, which is the mistake doEditProjectEntry made until 9 Sep.
+  const bulk = extractFn('doBulkCategorize');
+  check('bulk categorize: passes through requireEditRights',
+    /requireEditRights/.test(bulk), true);
+  check('bulk categorize: saves through db.saveProject so a ledger syncs',
+    /db\.saveProject/.test(bulk), true);
+})();
+
+/* ---- Income is categorizable, and the two suggestion lists stay apart ----
+   Rachel, 16 Sep 2026: "there's no logic in categorizing expenses but not
+   categorizing revenue". Behavioural, not structural: the minifier renames
+   every local in these functions, so the assertions run the code. */
+section('Income categories');
+(function () {
+  const getUsedCategories = new Function(
+    extractFn('getUsedCategories') + '; return getUsedCategories;')();
+  const p = { history: [
+    { type: 'charge',  costItem: 'Plumber' },
+    { type: 'charge',  costItem: 'Bills' },
+    { type: 'payment', costItem: 'Rent' },
+    { type: 'payment', costItem: '' },
+  ] };
+  check('used categories: no filter returns both sides',
+    getUsedCategories(p).join(','), 'Bills,Plumber,Rent');
+  check('used categories: expense picker never offers an income category',
+    getUsedCategories(p, 'charge').join(','), 'Bills,Plumber');
+  check('used categories: income picker never offers an expense category',
+    getUsedCategories(p, 'payment').join(','), 'Rent');
+
+  // The edit dialog must build a picker for income too. 'editCostItem' and
+  // 'payment' are string literals and survive the minifier; the local entry
+  // variable does not, so it is deliberately not spelled here.
+  const actions = extractFn('showProjectEntryActions');
+  check('edit dialog: still wires the category field',
+    /editCostItem/.test(actions), true);
+  check('edit dialog: builds the picker for income as well as expenses',
+    new RegExp(Q + 'payment' + Q).test(actions), true);
+
+  // The add-income form must offer it too, or every income entry would have to
+  // be saved and then edited to be categorized.
+  const payInput = extractFn('showProjectPayInput');
+  check('income form: offers a category picker',
+    /projPayCat/.test(payInput) && /buildCategoryPicker/.test(payInput), true);
+  const confirmPay = extractFn('confirmProjectPay');
+  check('income form: saves the chosen category',
+    /getCategoryValue\(/.test(confirmPay) && /projPayCat/.test(confirmPay), true);
+})();
+
+/* ---- uncategorizedEntries: income in, settlements out ---- */
+(function () {
+  const uncategorizedEntries = new Function(
+    extractFn('uncategorizedEntries') + '; return uncategorizedEntries;')();
+  const p = { history: [
+    { id: 'a', type: 'charge',     amount: 10 },
+    { id: 'b', type: 'payment',    amount: 20 },
+    { id: 'c', type: 'charge',     amount: 30, costItem: 'Bills' },
+    { id: 'd', type: 'settlement', amount: 40 },
+  ] };
+  check('uncategorized: picks up an untagged expense AND an untagged income',
+    uncategorizedEntries(p).map(h => h.id).join(','), 'a,b');
+  check('uncategorized: never offers a settlement a category',
+    uncategorizedEntries(p).some(h => h.type === 'settlement'), false);
+  check('uncategorized: empties once everything is tagged',
+    uncategorizedEntries({ history: [{ type: 'charge', costItem: 'Bills' }] }).length, 0);
+})();
+
+/* ---- Deleting an EXPENSE category must not blank an INCOME entry ----
+   doRenameCategory has always filtered on type==='charge'; deleteCategory did
+   not. Harmless while only expenses carried categories, and a silent data loss
+   the moment income did: "Rent" exists on both sides of a rental. */
+(function () {
+  const del = extractFn('deleteCategory');
+  check('delete category: filters to charges, so income keeps its category',
+    new RegExp(Q + 'charge' + Q).test(del), true);
 })();
 
 
