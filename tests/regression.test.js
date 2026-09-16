@@ -1920,6 +1920,38 @@ check('activity with counterparty unchanged',
    v100 - USER FEEDBACK, 16 Sep 2026
    ========================================================================== */
 
+/* ---- v101 HOTFIX: REMOVING AN ELEMENT MEANS FIXING EVERY READER ----
+   v100 deleted the Section select from the three creation forms and made the
+   SAVE paths null-safe. It did not make the OPEN paths null-safe, and those run
+   when the form is opened: sel.innerHTML on a null threw, the throw killed the
+   open, and New Activity / New Project / New Lending Circle did NOTHING when
+   tapped. New Section still worked because it is a different code path, which
+   is what made the report look so strange.
+   Behavioural: each function is run with a DOM that has no such element. */
+section('The creation forms open with no Section select present');
+(function () {
+  const noDom = { getElementById: () => null };
+  ['populateGroupSelect', 'populatePfGroupSelect', 'populateLfGroupSelect'].forEach((fn) => {
+    const f = new Function('document', 'groups', 'esc',
+      extractFn(fn) + '; return ' + fn + ';')(noDom, [], (x) => x);
+    let threw = null;
+    try { f(''); } catch (e) { threw = e.message; }
+    check(fn + ': survives the select being gone', threw, 'null');
+  });
+  ['onGroupSelectChange', 'onPfGroupSelectChange', 'onLfGroupSelectChange'].forEach((fn) => {
+    const f = new Function('document', 'showToast',
+      extractFn(fn) + '; return ' + fn + ';')(noDom, () => {});
+    let threw = null;
+    try { f(); } catch (e) { threw = e.message; }
+    check(fn + ': survives the select being gone', threw, 'null');
+  });
+  // Belt and braces: no reader of those ids may dereference without a guard.
+  ['populateGroupSelect', 'populatePfGroupSelect', 'populateLfGroupSelect'].forEach((fn) => {
+    check(fn + ': returns early when the element is missing',
+      /if\(!\w+\)return/.test(extractFn(fn)), true);
+  });
+})();
+
 /* ---- THE VIEWER SAW THE WRONG DASHBOARD (the one that mattered) ----
    A solo PAYING project shared as viewer rendered the EARNING dashboard on the
    viewer's phone: "Total Earned 0 / Spent 155 / Net Loss 155", where the owner
