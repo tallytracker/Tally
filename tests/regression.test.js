@@ -3283,7 +3283,26 @@ section('/get/ sends a phone to its own store');
   check('back does not bounce them here again', /location\.assign/.test(get), false);
   check('Android goes to Play', /info\.target\s*=\s*PLAY/.test(get), true);
   check('iOS goes to the store only once a URL exists', /ios\s*&&\s*APPSTORE/.test(get), true);
-  check('the App Store URL is still the one thing missing', /var APPSTORE\s*=\s*''/.test(get), true);
+  /* 16 Sep 2026: THE APP STORE URL IS IN. Tally has been live on the App Store
+     since 28 Aug 2026 (id 6798780882); this constant sat empty for three weeks
+     because the handover notes wrongly said the app had never been submitted.
+     These assertions are what stops that happening again in either direction. */
+  check('the App Store URL is set', /var APPSTORE\s*=\s*'https:/.test(get), true);
+  check('it is the right listing', get.indexOf('id6798780882') >= 0, true);
+  /* NO STOREFRONT IN THE URL. Apple's share sheet copies a country-specific
+     link (hers was /lb/, the Lebanese store). This link is forwarded through
+     WhatsApp to people with any Apple ID, and a storefront-specific link is a
+     dead end for all of them, so it must stay storefront-neutral.
+     SCOPE THIS TO THE ASSIGNMENT, not the file: the comment beside it quotes
+     the /lb/ link as the example of what not to use, and a whole-file search
+     therefore matches the warning and calls it the bug. */
+  const appstoreLine = (get.match(/var APPSTORE\s*=\s*'[^']*'/) || [''])[0];
+  check('the App Store link carries no country code',
+    /apps\.apple\.com\/(?!app\/)/.test(appstoreLine), false);
+  check('and it is the storefront-neutral form',
+    /apps\.apple\.com\/app\/id\d+'$/.test(appstoreLine), true);
+  check('so iPhone now redirects rather than seeing the panel',
+    /ios && APPSTORE/.test(get), true);
   check('the installed app is never thrown out to Play', /display-mode: standalone/.test(get), true);
   check('there is a way to look at the page itself', /stay=1/.test(get), true);
   check('an unplaceable device is shown a page, not guessed at', /vOther/.test(get), true);

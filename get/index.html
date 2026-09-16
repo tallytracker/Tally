@@ -39,11 +39,12 @@
         loads the web host, so a tap on a /get/ link from INSIDE the app would
         otherwise throw the user out to the Play listing.
      3. No APPSTORE URL set, on iOS — there is nowhere to send them, so they
-        get the iPhone panel below instead of a broken jump.
-
-   TO TURN ON THE iPHONE REDIRECT: put the App Store URL in APPSTORE. That is
-   the whole change — the iPhone half then behaves exactly like the Android
-   half, and the panel stops being used.
+        get the iPhone panel below instead of a broken jump. THIS NO LONGER
+        APPLIES: the App Store URL is set (16 Sep 2026), so iPhone redirects
+        like Android does and the panel below is the fallback, not the norm.
+        It is kept, not deleted, because it is what happens if APPSTORE is ever
+        cleared — and because it is the only correct answer for an iOS version
+        below the app's 15.0 floor, where the store listing cannot install.
 
    HOST NOTE, KEPT FROM THE OLD VERSION OF THIS PAGE (7 Aug 2026). Tally moved
    from tallytracker.github.io to tally-app-c82c6.web.app on 28 Jul 2026, and
@@ -56,7 +57,19 @@
    =========================================================================== */
 window.TALLY_GET = (function(){
   var PLAY     = 'https://play.google.com/store/apps/details?id=io.github.tallytracker.twa';
-  var APPSTORE = ''; /* <-- App Store URL goes here. Empty = iPhone sees the panel. */
+  /* TALLY IS ON THE APP STORE. It has been since 28 Aug 2026 — "Tally - Simple
+     Payment Tracker", seller Rachel Sawan, id 6798780882 — and this constant
+     sat empty for nearly three weeks because the handover notes said the app
+     had never been submitted. It had. Rachel supplied the link on 16 Sep.
+
+     NO COUNTRY CODE IN THIS URL, AND THAT IS THE POINT. The link Apple's own
+     share sheet copies is storefront-specific — hers came out as
+     apps.apple.com/lb/app/... , the Lebanese store. This link goes into a
+     WhatsApp message that gets forwarded anywhere, and a storefront-specific
+     link shown to somebody with a US or French Apple ID is a dead end.
+     apps.apple.com/app/id<id> has no storefront in it, so Apple redirects each
+     visitor to their own. Do not "tidy" a country code back in. */
+  var APPSTORE = 'https://apps.apple.com/app/id6798780882';
   var WEB      = 'https://tally-app-c82c6.web.app/Tally/';
 
   var ua = navigator.userAgent || '';
