@@ -1899,9 +1899,12 @@ check('activity with counterparty unchanged',
 // when there is no counterparty, not print a stand-in for it.
 (function () {
   // 16 Sep 2026: showShareSummary became the three-way chooser and the text it
-  // used to build moved into buildShareSummaryText. Same two requirements,
-  // asserted against the function that now holds the copy.
-  const share = extractFn('buildShareSummaryText');
+  // used to build moved into buildShareSummaryText. LATER THE SAME DAY the
+  // one-sided figures moved again, out into soloFiguresBlock, so that the
+  // INVITE message could call the very same code - see "The invite message no
+  // longer calls a solo project a debt". Same two requirements, asserted
+  // against the function that now holds the copy.
+  const share = extractFn('soloFiguresBlock');
   check('share: the Between clause is guarded by hasOther',
     /hasOther\(p\)\)\s*\w+\+=.Between /.test(share), true);
   check('share: the paid line has an unnamed fallback',
@@ -2024,8 +2027,11 @@ section('Project action buttons are instructions, not statements');
 section('Who to list as a participant');
 (function () {
   check('the project form says sharing the cost', /sharing the cost<\/b>/.test(src), true);
-  check('the project form rules out mere attendance',
-    /someone who owes nothing does not belong here/.test(src), true);
+  // 16 Sep 2026, Rachel: the second sentence went. "no need for it" - the
+  // first sentence is the whole instruction. This assertion is INVERTED on
+  // purpose rather than deleted, so the sentence cannot quietly come back.
+  check('it does not lecture about who came along',
+    /someone who owes nothing does not belong here/.test(src), false);
   check('the vague old hint is gone',
     /Add everyone involved — including yourself/.test(src), false);
   check('the label asks the question directly',
@@ -2323,25 +2329,33 @@ section('Reminder copy says it is a nudge to log, not to attend');
     sw.indexOf("Log today's session:") > -1, true);
 })();
 
-/* ---- A shared link works whatever phone the recipient has (3 Sep 2026) ----
-   The landing page used to sniff the user agent and jump straight to one store.
-   The sender has no idea what the recipient carries, and a WhatsApp in-app
-   browser does not always report the agent you expect, so a wrong guess
-   dead-ended someone on a store for a phone they do not own. */
-section('Shared links offer both stores');
+/* ---- A shared link lands on the right store (16 Sep 2026) ----------------
+   BOTH HALVES OF THE HISTORY, because this has been reversed once already.
+   Until 3 Sep the landing page sniffed the user agent and jumped to a store; it
+   was turned OFF that day because a wrong guess dead-ended somebody on a store
+   for a phone they do not own. On 16 Sep Rachel asked for it back - the menu
+   made every recipient choose, and she does not want the browser offered.
+   THE DIFFERENCE THIS TIME, and it is the whole reason it is safe: the jump
+   happens only on a POSITIVE signal ("android" in the agent, or iOS with an App
+   Store URL actually set). Nothing is inferred from an absence, so an
+   unplaceable device is shown the page rather than sent somewhere.
+   The behavioural assertions are in "/get/ sends a phone to its own store". */
+section('Shared links point at one link that knows the device');
 (function () {
-  check('every WhatsApp footer names both stores',
-    (src.split('_Get Tally free — App Store, Google Play or web:_').length - 1), 4);
+  check('no footer lists the destinations any more',
+    /App Store, Google Play or web/.test(src), false);
+  check('every footer stops at the invitation',
+    (src.split('_Get Tally free:_').length - 1), 4);
   check('no footer still claims one link fits every device',
     /_Get Tally free \(any device\):_/.test(src), false);
   const getPage = fs.readFileSync(path.join(__dirname, '..', 'get', 'index.html'), 'utf8');
   check('the landing page offers Google Play',
     /play\.google\.com\/store\/apps/.test(getPage), true);
-  check('the landing page offers the App Store', /App Store/.test(getPage), true);
-  check('the landing page offers the browser too',
+  check('the landing page still knows about the App Store', /App Store/.test(getPage), true);
+  check('the web app is still reachable from it',
     /tally-app-c82c6\.web\.app\/Tally\//.test(getPage), true);
-  check('the landing page no longer guesses and redirects',
-    /location\.replace\(/.test(getPage), false);
+  check('the landing page routes by device again',
+    /location\.replace\(/.test(getPage), true);
 })();
 
 /* ---- Creation forms are compact (3 Sep 2026) ---- */
@@ -2647,8 +2661,10 @@ section('A viewer cannot share the ledger, and is not left with nothing');
   const appMsg = extractFn('buildAppShareMessage');
   check('the app share exists', appMsg.length > 0, true);
   check('the app share carries no balance', /Current Balance|balance:/i.test(appMsg.replace(/live balance|the balance is/gi, '')), false);
-  check('the app share offers both stores',
-    /Get it free — App Store, Google Play or web/.test(appMsg), true);
+  check('the app share stops at the invitation (16 Sep 2026)',
+    /Get it free:/.test(appMsg), true);
+  check('and no longer lists the destinations',
+    /App Store, Google Play or web/.test(appMsg), false);
   check('Settings offers it to every role', /onclick="shareTallyApp\(\)"/.test(src), true);
 })();
 
@@ -3106,6 +3122,174 @@ section('Team Details opens closed on a group project');
     extractFn('togglePeopleDetails').indexOf('saveProject') >= 0, false);
   check('the row still says how many people are in there',
     /Team Details · [^<]*\+/.test(rpd), true);
+})();
+
+
+/* ======================================================================
+   v102 — THREE THINGS RACHEL REPORTED ON 16 SEP 2026, ONE OF THEM UGLY
+   ====================================================================== */
+
+section('The invite message no longer calls a solo project a debt');
+/* THE REPORT, and it is the worst kind of bug because the number was right and
+   the sentence was wrong. Rachel shares a project where SHE pays her interior
+   designer. Sent as a plain WhatsApp summary it read correctly: "Rachel paid
+   5,900 / Remaining to pay 600". Sent as a VIEWER or EDITOR invite — the same
+   project, the same moment — it told the designer "you're owed 5,900", naming
+   every penny she had already paid him as an outstanding debt.
+
+   CAUSE: p.balance is charges minus payments. In an ACTIVITY that is a real
+   two-sided debt. In a solo PROJECT a charge is money already spent and there
+   are normally no payment entries at all, so the balance is just the running
+   total spent. inviteBalanceLine called it a debt for every non-group type.
+   Third bug in this family in two days (v98 guest unlock, v100 _flipView):
+   A RULE THAT HOLDS FOR ACTIVITIES BEING APPLIED TO EVERYTHING THAT IS NOT A
+   GROUP. The whitelist is the fix, as it was in v100.
+
+   Behavioural, not textual: every local in these functions is renamed by the
+   minifier, so the assertions run the real code. */
+(function () {
+  const FIG = extractFn('hasTwoSidedBalance') + ';' + extractFn('isGoalMode') + ';' +
+              extractFn('figuresHeader') + ';' + extractFn('soloFiguresBlock') + ';';
+  const DEPS = ['cur', 'projSym', 'getEntriesSinceLastSettlement', 'amtMain', 'rd2',
+                'isPay', 'isMultiCur', 'hasOther', 'myName', 'otherName', 'payerName',
+                'syncBalance', 'dashHist', 'calcTransfers'];
+  const stubs = [
+    () => '$', () => '$',
+    (x) => x.history || [],
+    (x, h) => h.amount,
+    (n) => Math.round(n * 100) / 100,
+    (x) => x.direction !== 'earn',
+    () => false,
+    (x) => !!x.counterparty,
+    () => 'Rachel',
+    (x) => x.counterparty || 'them',
+    (x) => (x.direction !== 'earn') ? 'Rachel' : (x.counterparty || 'them'),
+    (x) => { x.balance = (x.history || []).reduce((s, h) =>
+               h.type === 'charge' ? s + h.amount : h.type === 'payment' ? s - h.amount : s, 0); },
+    (x) => x.history || [],
+    () => [],
+  ];
+  const build = (extra, ret) => new Function(...DEPS, FIG + extra + '; return ' + ret + ';')(...stubs);
+  const inviteLine = build(extractFn('inviteBalanceLine'), 'inviteBalanceLine');
+  const summary    = build(extractFn('buildShareSummaryText'), 'buildShareSummaryText');
+  const solo       = build('', 'soloFiguresBlock');
+
+  // Rachel's own project, her own figures.
+  const designer = () => ({ id: 'd1', name: 'Interior designer', type: 'project',
+                            direction: 'pay', counterparty: 'Karim', budget: 6500,
+                            participants: [], history: [{ type: 'charge', amount: 5900 }] });
+
+  const line = inviteLine(designer());
+  check('it does not tell him he is owed anything', /owed/.test(line), false);
+  check('it does not name 5900 as a debt', /Balance: you/.test(line), false);
+  check('it says who paid, and how much', line.indexOf('Rachel paid: $5900') >= 0, true);
+  check('it carries the figure that matters', line.indexOf('Remaining to pay: $600') >= 0, true);
+  check('it still names the budget', line.indexOf('Budget: $6500') >= 0, true);
+
+  // THE GUARANTEE, not just the fix: the two messages carry the SAME block,
+  // character for character, because they call the same function.
+  check('the invite and the plain summary cannot disagree',
+    summary(designer()).indexOf(solo(designer())) >= 0, true);
+  check('and the plain summary still reads as it did',
+    summary(designer()).indexOf('Remaining to pay: $600') >= 0, true);
+
+  // AN ACTIVITY KEEPS THE DEBT SENTENCE — it is correct there, and this is the
+  // half a whitelist is for.
+  const tutor = { id: 't1', name: 'Tutor', type: 'fixed', direction: 'pay',
+                  counterparty: 'Karim', participants: [],
+                  history: [{ type: 'charge', amount: 1000 }, { type: 'payment', amount: 400 }] };
+  const tline = inviteLine(tutor);
+  check('an activity still states the balance', tline.indexOf('Current Balance') >= 0, true);
+  check('an activity still says who is owed', tline.indexOf("you're owed $600") >= 0, true);
+
+  // An earning solo project is one-sided too, from the other direction.
+  const rental = { id: 'r1', name: 'Orea Rental', type: 'project', direction: 'earn',
+                   participants: [], history: [{ type: 'charge', amount: 120 }] };
+  check('an earning project is not a debt either',
+    /Current Balance/.test(inviteLine(rental)), false);
+  check('an earning project says what it billed',
+    inviteLine(rental).indexOf('Total billed: $120') >= 0, true);
+
+  // A group still hands off to the settle-up block.
+  check('a group project still returns nothing here',
+    inviteLine({ id: 'g1', type: 'group', participants: ['A', 'B'], history: [] }), '');
+  check('a lending circle still returns nothing here',
+    inviteLine({ id: 'l1', type: 'lending', participants: [], history: [] }), '');
+
+  // THE WHITELIST ITSELF: only the four activity types have two sides.
+  const two = new Function(extractFn('hasTwoSidedBalance') + '; return hasTwoSidedBalance;')();
+  ['hourly', 'daily', 'fixed', 'customrate'].forEach((t) => {
+    check(t + ' has two sides', two({ type: t, participants: [] }), true);
+  });
+  ['project', 'group', 'lending', 'something-new'].forEach((t) => {
+    check(t + ' does not', two({ type: t, participants: [] }), false);
+  });
+  check('participants alone rule it out',
+    two({ type: 'fixed', participants: ['A'] }), false);
+
+  // ONE COPY OF THE WORDING, which is the structural half of the same promise.
+  // COUNT THE STRING LITERAL, NOT THE WORDS. This file's own comments mention
+  // the phrase, and the minifier strips comments - so a plain word count is 2
+  // on the master and 1 on the shipped build, which is the exact shape of trap
+  // that made the suite unrunnable for five days in September.
+  check('"Remaining to pay" is written in exactly one place',
+    (src.match(new RegExp(Q + 'Remaining to pay: ' + Q, 'g')) || []).length, 1);
+  check('inviteBalanceLine defers to the shared block',
+    extractFn('inviteBalanceLine').indexOf('soloFiguresBlock') >= 0, true);
+  check('and asks the whitelist first',
+    extractFn('inviteBalanceLine').indexOf('hasTwoSidedBalance') >= 0, true);
+  check('buildShareSummaryText no longer keeps its own copy',
+    extractFn('buildShareSummaryText').indexOf('Remaining to pay') >= 0, false);
+})();
+
+section('The share footers stop offering the browser');
+/* Rachel, 16 Sep 2026: "remove from the whatsapp message - app store, google
+   play, or web. just stop at get tally free and put the link." The link goes to
+   /get/, which now routes by device, so listing the destinations in the message
+   was both long and wrong. */
+(function () {
+  check('no message lists the three destinations',
+    /App Store, Google Play or web/.test(src), false);
+  check('the footer stops at the invitation',
+    (src.match(/_Get Tally free:_/g) || []).length, 4);
+  check('the tell-a-friend line too',
+    /Get it free:\\n/.test(src), true);
+  check('the link itself is untouched',
+    (src.match(/Tally\/get\//g) || []).length >= 5, true);
+})();
+
+section('The participants hint is one sentence');
+/* Rachel, 16 Sep 2026: the second sentence went. The first one is the whole
+   instruction; the second was explaining a joke. */
+(function () {
+  check('the instruction stays', /Only the people <b>sharing the cost<\/b> — including yourself\./.test(src), true);
+  check('the lecture goes', /came along/.test(src), false);
+})();
+
+section('/get/ sends a phone to its own store');
+/* Rachel, 16 Sep 2026: "why is the link not taking the user directly to the
+   relevant store?" Because it was turned off on 3 Sep, at her request, after a
+   wrong guess dead-ended someone. It is back, but only on a POSITIVE signal:
+   Android in the user agent, or iOS with an App Store URL actually set.
+   Anything unplaceable is shown the page instead of being sent somewhere. */
+(function () {
+  const get = (function () {
+    const p = path.join(__dirname, '..', 'get', 'index.html');
+    try { return fs.readFileSync(p, 'utf8'); }
+    catch (e) { throw new Error('Could not read get/index.html at ' + p); }
+  })();
+  check('Android is routed by a positive match', /android\s*=\s*\/android\/i\.test\(ua\)/.test(get), true);
+  check('it redirects rather than linking', /location\.replace\(info\.target\)/.test(get), true);
+  check('back does not bounce them here again', /location\.assign/.test(get), false);
+  check('Android goes to Play', /info\.target\s*=\s*PLAY/.test(get), true);
+  check('iOS goes to the store only once a URL exists', /ios\s*&&\s*APPSTORE/.test(get), true);
+  check('the App Store URL is still the one thing missing', /var APPSTORE\s*=\s*''/.test(get), true);
+  check('the installed app is never thrown out to Play', /display-mode: standalone/.test(get), true);
+  check('there is a way to look at the page itself', /stay=1/.test(get), true);
+  check('an unplaceable device is shown a page, not guessed at', /vOther/.test(get), true);
+  check('the iPhone panel says how to keep it', /Add to Home Screen/.test(get), true);
+  check('the host note survived the rewrite', /per-origin|PER-ORIGIN/.test(get), true);
+  check('the Play id is unchanged', get.indexOf('io.github.tallytracker.twa') >= 0, true);
 })();
 
 /* ============================ RESULTS ============================ */

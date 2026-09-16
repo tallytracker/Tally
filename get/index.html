@@ -4,4 +4,150 @@
   modified, distributed, or used in any form without prior written permission.
   See the LICENSE file in this repository.
 -->
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Get Tally — Simple Balance Tracker</title><meta name="robots" content="noindex"><style>:root{--accent:#e67e22;--ink:#3d3a34;--mid:#6f675c;--line:#e6e0d6;--card:#fff}*{box-sizing:border-box}body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f7f5f2;color:var(--ink);margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:24px}.wrap{width:100%;max-width:360px;text-align:center}h1{font-size:26px;margin:0 0 6px;letter-spacing:-.3px}.sub{font-size:14px;color:var(--mid);margin:0 0 24px;line-height:1.5}.btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:15px 18px;margin-bottom:10px;border-radius:14px;border:1.5px solid var(--line);background:var(--card);color:var(--ink);font-size:15px;font-weight:700;text-decoration:none;line-height:1.2}.btn small{display:block;font-size:11.5px;font-weight:600;color:var(--mid);letter-spacing:.3px}.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}.btn.primary small{color:#fff;opacity:.85}.btn.soft{background:0 0;border-style:dashed;color:var(--mid)}.hint{font-size:12px;color:var(--mid);margin:14px 0 0;line-height:1.5}.pick{font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--mid);margin:0 0 12px}</style></head><body><div class="wrap"><h1>Tally</h1><p class="sub">The simple balance tracker — sessions, shared trips and who owes whom.</p><p class="pick">Choose your device</p><a class="btn" id="btnIos" href="https://tally-app-c82c6.web.app/Tally/">iPhone &amp; iPad<small id="iosSub">Open in Safari — App Store version coming soon</small></a> <a class="btn" id="btnPlay" href="https://play.google.com/store/apps/details?id=io.github.tallytracker.twa">Android<small>Get it on Google Play</small></a> <a class="btn soft" id="btnWeb" href="https://tally-app-c82c6.web.app/Tally/">Any device<small>Open Tally in your browser</small></a><p class="hint">Free. Works offline. Your data stays on your device unless you sign in to sync.</p></div><script>(function(){var t="https://play.google.com/store/apps/details?id=io.github.tallytracker.twa";var e="";var a="https://tally-app-c82c6.web.app/Tally/";var o=navigator.userAgent||"";var n=/iphone|ipad|ipod/i.test(o)||/Macintosh/.test(o)&&navigator.maxTouchPoints>1;var r=/android/i.test(o);var i=document.getElementById("btnIos"),s=document.getElementById("btnPlay");if(e){i.href=e;document.getElementById("iosSub").textContent="Download on the App Store"}else{i.href=a}s.href=t;if(r)s.className="btn primary";else if(n)i.className="btn primary"})()</script></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Get Tally — Simple Balance Tracker</title>
+<meta name="robots" content="noindex">
+<script>
+/* ===========================================================================
+   ROUTE BY DEVICE, BEFORE ANYTHING PAINTS (16 Sep 2026, Rachel).
+
+   THE HISTORY, because this has now been changed twice and the next person
+   deserves both halves of it:
+     - Until 3 Sep 2026 this page sniffed the user agent and jumped straight to
+       the store.
+     - On 3 Sep it was turned OFF at Rachel's request, because a WhatsApp link
+       opens inside WhatsApp's own in-app browser and a wrong guess dead-ended
+       somebody on a store page for a phone they do not own.
+     - On 16 Sep Rachel asked for it back: the three-button menu makes every
+       recipient choose, and she does not want the browser offered at all.
+
+   SO IT IS BACK, BUT ONLY ON A CERTAIN SIGNAL, WHICH IS THE PART THAT WENT
+   WRONG LAST TIME. "Android" and "iPhone/iPad" both appear in the UA of the
+   in-app browsers that matter (WhatsApp, Instagram, Facebook, Gmail), because
+   those are WebViews built on the platform's own engine. What is NOT reliable
+   is inferring one platform from the absence of the other, so anything this
+   script cannot place is SHOWN THE PAGE rather than sent somewhere. Desktop is
+   not a wrong guess to be made; it is a case to be handled.
+
+   THE REDIRECT IS SKIPPED in three situations, each for a concrete reason:
+     1. ?stay=1  — so Rachel and any reviewer can actually look at this page.
+     2. display-mode: standalone — the installed Android app is a TWA that
+        loads the web host, so a tap on a /get/ link from INSIDE the app would
+        otherwise throw the user out to the Play listing.
+     3. No APPSTORE URL set, on iOS — there is nowhere to send them, so they
+        get the iPhone panel below instead of a broken jump.
+
+   TO TURN ON THE iPHONE REDIRECT: put the App Store URL in APPSTORE. That is
+   the whole change — the iPhone half then behaves exactly like the Android
+   half, and the panel stops being used.
+
+   HOST NOTE, KEPT FROM THE OLD VERSION OF THIS PAGE (7 Aug 2026). Tally moved
+   from tallytracker.github.io to tally-app-c82c6.web.app on 28 Jul 2026, and
+   this page plus the share footers in index.html were missed for ten days.
+   Browser storage is PER-ORIGIN, so anyone who started on the old host and
+   later installed from Play — which runs on web.app — opened an empty app with
+   their data stranded on a host they could no longer reach. IF THE HOST EVER
+   CHANGES AGAIN it must change in FIVE places: the four share footers in
+   index.html, and the WEB constant just below.
+   =========================================================================== */
+window.TALLY_GET = (function(){
+  var PLAY     = 'https://play.google.com/store/apps/details?id=io.github.tallytracker.twa';
+  var APPSTORE = ''; /* <-- App Store URL goes here. Empty = iPhone sees the panel. */
+  var WEB      = 'https://tally-app-c82c6.web.app/Tally/';
+
+  var ua = navigator.userAgent || '';
+  var android = /android/i.test(ua);
+  /* iPadOS 13+ reports itself as a Mac, so touch points are the tell. */
+  var ios = /iphone|ipad|ipod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+
+  var stay = /[?&]stay=1/.test(location.search);
+  var installed = false;
+  try {
+    installed = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+                || navigator.standalone === true;
+  } catch (e) {}
+
+  var info = { play: PLAY, appstore: APPSTORE, web: WEB, android: android, ios: ios,
+               stay: stay, installed: installed, target: '' };
+
+  if (stay || installed) return info;
+  if (android)            info.target = PLAY;
+  else if (ios && APPSTORE) info.target = APPSTORE;
+
+  /* replace(), not assign(): the store page should not be behind a Back tap
+     that returns the user here to be redirected all over again. */
+  if (info.target) location.replace(info.target);
+  return info;
+})();
+</script>
+<style>
+:root{--accent:#e67e22;--ink:#3d3a34;--mid:#6f675c;--line:#e6e0d6;--card:#fff}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f7f5f2;color:var(--ink);margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:24px}
+.wrap{width:100%;max-width:360px;text-align:center}
+h1{font-size:26px;margin:0 0 6px;letter-spacing:-.3px}
+.sub{font-size:14px;color:var(--mid);margin:0 0 24px;line-height:1.5}
+.btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:15px 18px;margin-bottom:10px;border-radius:14px;border:1.5px solid var(--line);background:var(--card);color:var(--ink);font-size:15px;font-weight:700;text-decoration:none;line-height:1.2}
+.btn small{display:block;font-size:11.5px;font-weight:600;color:var(--mid);letter-spacing:.3px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary small{color:#fff;opacity:.85}
+.hint{font-size:12px;color:var(--mid);margin:14px 0 0;line-height:1.5}
+.pick{font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--mid);margin:0 0 12px}
+.step{background:var(--card);border:1.5px solid var(--line);border-radius:14px;padding:14px 16px;font-size:13px;color:var(--mid);line-height:1.6;text-align:left;margin-bottom:10px}
+.step b{color:var(--ink)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Tally</h1>
+  <p class="sub">The simple balance tracker — sessions, shared trips and who owes whom.</p>
+
+  <!-- iPHONE, while there is no App Store URL to jump to. One device, no menu:
+       the complaint about the old page was that it asked every recipient which
+       phone they were holding. The Add to Home Screen line is not a nicety —
+       without it the app runs inside WhatsApp's browser, whose storage that
+       browser is free to clear, and the user's entries go with it. -->
+  <div id="vIphone" hidden>
+    <a class="btn primary" id="btnOpenIos" href="#">Open Tally<small>Works straight away — nothing to install</small></a>
+    <p class="step">Keep it for good: tap <b>Share</b> at the bottom of Safari, then <b>Add to Home Screen</b>. Tally then opens like any other app, full screen, and your entries stay put.</p>
+    <p class="hint">Free. Works offline. Your data stays on your device unless you sign in to sync.</p>
+  </div>
+
+  <!-- DESKTOP / ANYTHING UNPLACEABLE. Not a wrong guess — a real case. -->
+  <div id="vOther" hidden>
+    <p class="pick">Get it on your phone</p>
+    <a class="btn primary" id="btnPlay" href="#">Android<small>Get it on Google Play</small></a>
+    <a class="btn" id="btnIos" href="#">iPhone &amp; iPad<small id="iosSub">Open Tally</small></a>
+    <p class="hint">Free. Works offline. Your data stays on your device unless you sign in to sync.</p>
+  </div>
+</div>
+<script>
+(function(){
+  var g = window.TALLY_GET || {};
+  /* If a redirect is already on its way, paint nothing: a panel that flashes
+     up and vanishes reads as a broken page. */
+  if (g.target) return;
+
+  var ios = g.ios && !g.appstore;
+  var pane = document.getElementById(ios ? 'vIphone' : 'vOther');
+  pane.hidden = false;
+
+  var open = document.getElementById('btnOpenIos');
+  if (open) open.href = g.web;
+
+  var bp = document.getElementById('btnPlay');
+  if (bp) bp.href = g.play;
+  var bi = document.getElementById('btnIos');
+  if (bi) {
+    bi.href = g.appstore || g.web;
+    if (g.appstore) document.getElementById('iosSub').textContent = 'Download on the App Store';
+  }
+})();
+</script>
+</body>
+</html>
