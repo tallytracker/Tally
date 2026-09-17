@@ -2091,7 +2091,42 @@ section('Three share options');
   check('the share button opens the chooser rather than an invite',
     /showShareChoice\(/.test(entry), true);
   check('someone who cannot mint a code still gets the balance text',
-    /buildShareSummaryText\(/.test(entry), true);
+    /shareTextFor\(/.test(entry), true);
+
+  /* ---- 18 Sep 2026: ALL FOUR SHARE BUTTONS, NOT ONE ----
+     Rachel reported the light three-way chooser had "reverted back to the old"
+     two black Viewer/Editor buttons. It had not reverted - v103 wired the
+     chooser to showShareSummary, which is the Share button on the PROJECT
+     screen and nothing else. The activity, group and lending buttons each still
+     opened `if(sharingOn()){startInviteFlow();return}`, and startInviteFlow
+     with no role falls through to showInviteRolePick: two options, both the
+     dark .dialog-btn-save. She tested v103 on a project and everything after it
+     on something else. Four front doors, one of them fixed. */
+  ['showGroupShareSummary', 'showLendingShareSummary', 'showActivityShareSummary'].forEach(function (fn) {
+    const f = extractFn(fn);
+    check(fn + ' goes through the same chooser', /showShareSummary\(\)/.test(f), true);
+    check('and ' + fn + ' no longer jumps straight to an invite',
+      /startInviteFlow\(\)/.test(f), false);
+  });
+  /* Each type still sends its OWN text - a lending circle's summary is not a
+     project's - so the chooser asks shareTextFor which one to build. */
+  const dispatch = extractFn('shareTextFor');
+  check('the balance text is chosen by tracker type',
+    /buildLendingSummaryText\(/.test(dispatch) && /buildActivitySummaryText\(/.test(dispatch) &&
+    /buildShareSummaryText\(/.test(dispatch), true);
+  /* `text` is a local the minifier renames, so say the thing that matters:
+     a BUILDER does not send. openWhatsApp is a function name and survives. */
+  ['buildGroupSummaryText', 'buildLendingSummaryText', 'buildActivitySummaryText'].forEach(function (fn) {
+    check(fn + ' builds the text and does not send it',
+      /openWhatsApp\(/.test(extractFn(fn)), false);
+  });
+  /* AND THE LAST TWO BLACK SLABS. showInviteRolePick is still reachable when a
+     participant is picked before a role, and it kept the ink buttons. */
+  const rolePick = extractFn('showInviteRolePick');
+  check('the role picker uses the light buttons too',
+    /share-choice-btn/.test(rolePick), true);
+  check('and no longer uses the ink button',
+    /dialog-btn-save/.test(rolePick), false);
 
   // Having chosen the role up front, nobody should be asked for it again.
   // `role` is a parameter and therefore renamed by the minifier, so these
@@ -2342,10 +2377,30 @@ section('Reminder copy says it is a nudge to log, not to attend');
    The behavioural assertions are in "/get/ sends a phone to its own store". */
 section('Shared links point at one link that knows the device');
 (function () {
-  check('no footer lists the destinations any more',
+  /* REVISED 17 Sep 2026, AND THIS IS NOT A REVERT OF 16 SEP - read both.
+     16 Sep removed the PROSE "App Store, Google Play or web", and that stays
+     removed: a sentence naming three places is noise when one smart link
+     already sends each phone to the right one.
+     What Rachel then reported is the other half: "the whatsapp message still
+     shows the web link, not the store links". /get/ does redirect by device,
+     but somebody READING the message sees a web address and cannot tell there
+     is an app behind it. So the smart link stays FIRST - it is still the one
+     that works for everybody, desktop included - and the two store URLs follow
+     it as addresses a person can recognise, tap, or search by name. */
+  check('the prose listing destinations is still gone',
     /App Store, Google Play or web/.test(src), false);
-  check('every footer stops at the invitation',
-    (src.split('_Get Tally free:_').length - 1), 4);
+  /* ONE FOOTER, NOT FOUR COPIES OF ONE. The tail used to be the same string
+     written out in four places, which is how three of them keep an old link
+     when the fourth is fixed. */
+  check('the per-tracker footer is built in one place',
+    (src.split('_Get Tally free:_').length - 1), 1);
+  check('and every summary uses it',
+    (src.split('appShareFooter()').length - 1) >= 5, true);
+  /* Spell the QUOTE with Q - terser rewrites every single one as a double. */
+  check('the smart link still leads',
+    new RegExp('Get Tally free:_ ' + Q + '\\+ ?GET_TALLY_URL').test(src), true);
+  check('with the App Store behind it', /APPSTORE_URL/.test(src), true);
+  check('and Google Play', /PLAY_URL/.test(src), true);
   check('no footer still claims one link fits every device',
     /_Get Tally free \(any device\):_/.test(src), false);
   const getPage = fs.readFileSync(path.join(__dirname, '..', 'get', 'index.html'), 'utf8');
@@ -2661,9 +2716,13 @@ section('A viewer cannot share the ledger, and is not left with nothing');
   const appMsg = extractFn('buildAppShareMessage');
   check('the app share exists', appMsg.length > 0, true);
   check('the app share carries no balance', /Current Balance|balance:/i.test(appMsg.replace(/live balance|the balance is/gi, '')), false);
-  check('the app share stops at the invitation (16 Sep 2026)',
-    /Get it free:/.test(appMsg), true);
-  check('and no longer lists the destinations',
+  /* The invitation still leads with the one link that knows the device; the
+     two store addresses follow it so a reader can see there IS an app. */
+  check('the app share still leads with the smart link',
+    /Get it free/.test(appMsg) && /GET_TALLY_URL/.test(appMsg), true);
+  check('and now names the stores a reader can search for',
+    /APPSTORE_URL/.test(appMsg) && /PLAY_URL/.test(appMsg), true);
+  check('but still does not list destinations in prose',
     /App Store, Google Play or web/.test(appMsg), false);
   check('Settings offers it to every role', /onclick="shareTallyApp\(\)"/.test(src), true);
 })();
@@ -3171,7 +3230,12 @@ section('The invite message no longer calls a solo project a debt');
   ];
   const build = (extra, ret) => new Function(...DEPS, FIG + extra + '; return ' + ret + ';')(...stubs);
   const inviteLine = build(extractFn('inviteBalanceLine'), 'inviteBalanceLine');
-  const summary    = build(extractFn('buildShareSummaryText'), 'buildShareSummaryText');
+  /* buildShareSummaryText ends with the shared footer now, so the sandbox
+     needs it and the three URLs it names. */
+  const summary    = build(
+    extractConstLine('const GET_TALLY_URL=') + extractConstLine('const APPSTORE_URL=') +
+    extractConstLine('const PLAY_URL=') + extractFn('appShareFooter') +
+    extractFn('buildShareSummaryText'), 'buildShareSummaryText');
   const solo       = build('', 'soloFiguresBlock');
 
   // Rachel's own project, her own figures.
@@ -3245,17 +3309,34 @@ section('The invite message no longer calls a solo project a debt');
 section('The share footers stop offering the browser');
 /* Rachel, 16 Sep 2026: "remove from the whatsapp message - app store, google
    play, or web. just stop at get tally free and put the link." The link goes to
-   /get/, which now routes by device, so listing the destinations in the message
-   was both long and wrong. */
+   /get/, which routes by device, so listing the destinations in PROSE was both
+   long and wrong.
+   REVISED 17 Sep 2026, and it is worth being precise about what changed.
+   Rachel: "the whatsapp message still shows the web link, not the store links."
+   Both things are true at once - /get/ really does redirect, AND a person
+   reading the message sees a web address with no sign there is an app behind
+   it. So the prose stays gone, the smart link stays FIRST (it is the only one
+   that works on a desktop), and the two store URLs follow it as addresses a
+   reader can recognise or search by name. */
 (function () {
-  check('no message lists the three destinations',
+  check('no message lists the three destinations in prose',
     /App Store, Google Play or web/.test(src), false);
-  check('the footer stops at the invitation',
-    (src.match(/_Get Tally free:_/g) || []).length, 4);
-  check('the tell-a-friend line too',
-    /Get it free:\\n/.test(src), true);
-  check('the link itself is untouched',
-    (src.match(/Tally\/get\//g) || []).length >= 5, true);
+  /* ONE footer now, not four copies of one string. */
+  check('the per-tracker footer is written once',
+    (src.match(/_Get Tally free:_/g) || []).length, 1);
+  check('and every summary calls it',
+    (src.match(/appShareFooter\(\)/g) || []).length >= 5, true);
+  check('the tell-a-friend line still invites', /Get it free/.test(src), true);
+  /* THE URL IS WRITTEN ONCE AND REFERRED TO BY NAME. It used to appear as a
+     literal in five places, which is how four of them keep an old address when
+     the fifth is changed. */
+  check('the smart link is defined exactly once',
+    (src.match(/Tally\/get\//g) || []).length, 1);
+  check('and every message reaches it through the constant',
+    (src.match(/GET_TALLY_URL/g) || []).length >= 4, true);
+  check('and the stores are named after it',
+    /apps\.apple\.com\/app\/id6798780882/.test(src) &&
+    /play\.google\.com\/store\/apps\/details\?id=io\.github\.tallytracker\.twa/.test(src), true);
 })();
 
 section('The participants hint is one sentence');
@@ -3411,7 +3492,13 @@ section('Sections are edited where they are');
 
   /* ---- the chevron is a real tap target (17 Sep 2026) ---- */
   check('the chevron is its own button', /class="group-chevron/.test(hdr) && /<button class="group-chevron/.test(hdr), true);
-  check('and it is 38px, not a bare glyph', /\.group-chevron\{width:38px;height:38px/.test(src), true);
+  /* TALL AND NARROW, revised the same day: 38px square pushed the label away
+     from the control that collapses it. Rachel: "give the arrow more height so
+     its visible, and bring the label close to it". */
+  check('and it is tall enough to see and hit',
+    /\.group-chevron\{width:24px;height:34px/.test(src), true);
+  check('with the glyph itself enlarged', /\.group-chevron i\{font-size:26px/.test(src), true);
+  check('and the label right beside it', /\.group-header-left\{[^}]*gap:2px/.test(src), true);
   check('the rotation is on an inner span so the hit area does not rotate',
     /\.group-chevron i\{/.test(src) && /\.group-chevron\.open i\{transform:rotate\(90deg\)\}/.test(src), true);
 
@@ -4128,6 +4215,14 @@ section('A screenshot of a tracker says Tally on it');
     check(v + ' carries it above the title', brand > -1 && brand < next, true);
   });
   check('it names the app, not just the mark', /brand-strip-text">Tally</.test(src), true);
+  /* AND THERE IS ONLY ONE OF IT (Rachel, 18 Sep 2026). v107 briefly added a
+     centred footer under the history too. A footer below a long history is not
+     in a screenshot of the TOP, which was the entire reason for the mark - so
+     it was either pin it to the screen, spending permanent space on every
+     detail view for an occasional screenshot, or drop it. Dropped. */
+  check('and there is no footer duplicating it', /brand-footer/.test(src), false);
+  check('nor a strapline explaining where to find the app to someone using it',
+    /on the App Store and Google Play/.test(src), false);
   /* Above the fold on purpose: a strip at the bottom of a long history is not
      in the picture. */
   check('and it is the same mark as the home screen',
