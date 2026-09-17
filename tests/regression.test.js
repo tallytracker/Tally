@@ -4134,6 +4134,155 @@ section('A screenshot of a tracker says Tally on it');
     (src.match(/rect width="48" height="48" rx="11" fill="#e67e22"/g) || []).length >= 3, true);
 })();
 
+
+/* ---- 17 Sep 2026: PARTIAL SETTLEMENT IN A LENDING CIRCLE ------------------
+   Rachel: "there's a settle & reset button, which settles all, but what about
+   partial settlement similar to what we have in group projects?" - and then
+   the sharper half: "when u click + new transaction, it says Rachel paid for
+   Diana, but when Diana pays back Rachel, it shouldnt read it as Diana paid
+   for Rachel, she didnt, she just paid Rachel back."
+   The arithmetic was always available (record the reverse transaction); what
+   was missing was the ability to say what actually happened. */
+section('A lending circle can be paid down a bit at a time');
+(function () {
+  const LEND_SRC = [
+    'function rd2(n){return Math.round((n+Number.EPSILON)*100)/100}',
+    extractFn('getEntriesSinceLastSettlement'),
+    extractFn('calcLendingSettlement'),
+    extractFn('calcTransfers'),
+    'return {calc:calcLendingSettlement,transfers:calcTransfers};'
+  ].join('\n');
+  const L = new Function(LEND_SRC)();
+  const circle = (hist) => ({ type: 'lending', participants: ['Rachel', 'Sam', 'Diana'], history: hist });
+
+  /* Rachel pays for Sam twice; Sam pays half of it back. */
+  const lent = [
+    { id: 't1', type: 'transfer', from: 'Rachel', to: 'Sam', amount: 100 },
+    { id: 't2', type: 'transfer', from: 'Rachel', to: 'Diana', amount: 40 },
+  ];
+  const a = L.calc(circle(lent.slice()));
+  check('a loan puts the lender in credit', a.balances.Rachel, 140);
+  check('and the borrower in debt', a.balances.Sam, -100);
+  check('outstanding is what is owed, counted once', a.outstanding, 140);
+  check('total lent is the gross', a.totalLent, 140);
+  check('and nothing is repaid yet', a.totalRepaid, 0);
+
+  /* THE REPAYMENT MOVES MONEY THE SAME WAY A LOAN DOES - identical signs. */
+  const withRepay = L.calc(circle([{ id: 'r1', type: 'repayment', from: 'Sam', to: 'Rachel', amount: 60 }].concat(lent)));
+  check('a repayment shrinks the debt', withRepay.balances.Sam, -40);
+  check('and the credit with it', withRepay.balances.Rachel, 80);
+  check('outstanding falls', withRepay.outstanding, 80);
+  check('but total lent does NOT grow', withRepay.totalLent, 140);
+  check('the repayment is counted separately', withRepay.totalRepaid, 60);
+  /* Which is the whole point: logged as a reverse transaction it would read as
+     Sam lending Rachel 60, and "total lent" would have said 200. */
+
+  /* Paying the lot off leaves nothing outstanding, and the history intact. */
+  const done = L.calc(circle([
+    { id: 'r2', type: 'repayment', from: 'Diana', to: 'Rachel', amount: 40 },
+    { id: 'r1', type: 'repayment', from: 'Sam', to: 'Rachel', amount: 100 },
+  ].concat(lent)));
+  check('repaid in full, nothing is outstanding', done.outstanding, 0);
+  check('everyone is square', [done.balances.Rachel, done.balances.Sam, done.balances.Diana].join(','), '0,0,0');
+  check('and the record of what was lent survives', done.totalLent, 140);
+  check('as does the record of what came back', done.totalRepaid, 140);
+  check('so Settle Up has nothing left to ask for', L.transfers(done.balances).length, 0);
+
+  /* Overpaying turns the debt around - which is legal, and guarded. */
+  const over = L.calc(circle([{ id: 'r3', type: 'repayment', from: 'Sam', to: 'Rachel', amount: 150 }].concat(lent)));
+  check('overpaying flips who owes whom', over.balances.Sam, 50);
+  check('and Rachel, overpaid, ends up in debit', over.balances.Rachel, -10);
+  /* Outstanding counts the CREDITS once. Sam is owed 50; Diana's 40 of debt is
+     the other side of money Rachel no longer has a net claim on. */
+  check('and the outstanding figure follows', over.outstanding, 50);
+
+  /* A settlement still draws the line: entries before it are a closed round. */
+  const afterSettle = L.calc(circle([
+    { id: 't3', type: 'transfer', from: 'Sam', to: 'Diana', amount: 25 },
+    { id: 's1', type: 'settlement', amount: 0, note: 'Settlement' },
+  ].concat(lent)));
+  check('a settlement scopes the round', afterSettle.outstanding, 25);
+  check('and the old loans are behind the line', afterSettle.totalLent, 25);
+
+  /* ---- ONE NUMBER EVERYWHERE. p.balance drives the home card; it used to be
+     the gross total lent, which never fell, so a fully repaid circle still
+     shouted the original figure. ---- */
+  const BAL_SRC = [
+    'function rd2(n){return Math.round((n+Number.EPSILON)*100)/100}',
+    'function amtMain(p,h){return h.amount}',
+    extractFn('getEntriesSinceLastSettlement'),
+    extractFn('calcLendingSettlement'),
+    extractFn('calcBalance'),
+    'return calcBalance;'
+  ].join('\n');
+  const bal = new Function(BAL_SRC)();
+  check('the home card shows what is still owed', bal(circle(lent.slice())), 140);
+  check('and it falls as debts are paid',
+    bal(circle([{ id: 'r1', type: 'repayment', from: 'Sam', to: 'Rachel', amount: 60 }].concat(lent))), 80);
+  check('and reaches zero when the circle is square',
+    bal(circle([
+      { id: 'r2', type: 'repayment', from: 'Diana', to: 'Rachel', amount: 40 },
+      { id: 'r1', type: 'repayment', from: 'Sam', to: 'Rachel', amount: 100 },
+    ].concat(lent))), 0);
+  /* A group project's balance must NOT have changed with it. */
+  check('a group project still totals its expenses',
+    bal({ type: 'group', participants: ['A', 'B'],
+          history: [{ type: 'charge', amount: 30 }, { type: 'charge', amount: 12 }] }), 42);
+
+  /* ---- what the rows SAY, which is the half she actually reported ---- */
+  const render = extractFn('renderLendingDetail');
+  check('a loan reads as words, not an arrow', /paid for/.test(render), true);
+  check('a repayment says what it is', /repaid/.test(render), true);
+  /* THE ARROW MEANT TWO THINGS ONE SCREEN APART: in the log "Rachel -> Diana"
+     meant Rachel PAID; in Settle Up the same arrow means Rachel OWES. */
+  const rowBlock = (render.match(/const line=[\s\S]{0,400}/) || [''])[0];
+  check('and the log row carries no arrow at all', /→/.test(rowBlock), false);
+  check('while Settle Up keeps its arrow, where it is an instruction',
+    /→/.test(render), true);
+  /* STRINGS AND SHAPES ONLY. `h` is a local the minifier renames and terser
+     rewrites every single quote as a double one. */
+  check('the history shows repayments too',
+    new RegExp('[\\w$]+\\.type===' + Q + 'repayment' + Q).test(render), true);
+
+  /* ---- the dashboard leads with the useful number ---- */
+  check('the headline is what is still owed', /Still Owed/.test(render), true);
+  check('and what was lent is kept as context underneath', /lent/.test(render), true);
+  check('"Total Transactions" is gone as a headline',
+    /balance-label">Total Transactions/.test(render), false);
+  /* The label is built from a ternary whose variable the minifier renames, so
+     check the two words it can produce and the element they land in. */
+  check('and the label really is the outstanding one',
+    /balance-label/.test(render) && /Outstanding/.test(render), true);
+
+  /* ---- the control, and the guard behind it ---- */
+  check('there is a Record Repayment button', /showLendingRepaymentInput\(\)/.test(src), true);
+  const form = extractFn('showLendingRepaymentInput');
+  check('it pre-fills from what is actually owed', /calcTransfers\(/.test(form), true);
+  check('and shows the outstanding debts', /Outstanding right now/.test(form), true);
+  check('a viewer cannot open it', /canWriteEntries\(/.test(form), true);
+  const conf = extractFn('confirmLendingRepayment');
+  check('it refuses a repayment to yourself', /Pick two different people/.test(conf), true);
+  check('it warns before flipping the debt', /More than owed/.test(conf), true);
+  check('and writes a repayment, not a transfer',
+    new RegExp('type:' + Q + 'repayment' + Q).test(conf), true);
+  check('a viewer cannot record one either', /requireEditRights\(/.test(conf), true);
+  /* The edit sheet named a repayment "Who paid / Paid for" - the exact
+     sentence she objected to. */
+  const sheet = extractFn('showLendingEntryActions');
+  check('the edit sheet knows which kind it is showing',
+    /Who repaid/.test(sheet) && /Who paid/.test(sheet), true);
+  check('and titles it a Repayment rather than a Transaction',
+    /Repayment/.test(sheet) && /Transaction/.test(sheet), true);
+  /* THE TYPE IS NOT EDITABLE FROM THAT SHEET, on purpose: turning a loan into
+     a repayment with a dropdown is how a history stops meaning anything. */
+  check('but it cannot turn one kind into the other',
+    new RegExp('type=' + Q + 'repayment' + Q).test(extractFn('doEditLendingEntry')), false);
+  /* Settling a round of nothing but repayments is still settling a round. */
+  check('a round of repayments can still be closed',
+    new RegExp('[\\w$]+\\.type===' + Q + 'transfer' + Q + '\\|\\|[\\w$]+\\.type===' + Q + 'repayment' + Q)
+      .test(extractFn('showLendingSettleConfirm')), true);
+})();
+
 /* ============================ RESULTS ============================ */
 Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks).concat(_pushChecks).concat(_unshareChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
