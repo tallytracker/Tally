@@ -3369,26 +3369,59 @@ section('Sections are edited where they are');
   check('and its Save handler', /function saveEditGroup/.test(src), false);
   check('and its Delete handler', /function deleteGroup/.test(src), false);
 
-  /* ---- what arrived ---- */
-  check('a remove control on each section', /removeSection\(/.test(render), true);
-  check('an add control on each section', /addSectionAfter\(/.test(render), true);
-  check('the name itself renames', /startRenameSection\(/.test(render), true);
-  /* THE ＋ ON THE UNGROUPED BLOCK IS NOT A DUPLICATE. The other ＋ lives on a
-     section header, so a user with no sections at all would have nothing to
-     tap and could never make a first one. */
-  check('and a way in when there are no sections yet',
+  /* ---- what arrived, as revised on 17 Sep 2026 ----
+     The ＋ and − pair is gone. Rachel: "i am not sure if the + and - on the
+     right of the section labels are clear... then maybe instead of the + we can
+     put arrows up and down to reorder sections?" They were not clear, and for
+     a findable reason: ＋ and − side by side read as one action in two
+     directions, when one INSERTED A SECTION and the other DELETED ONE. ↑ ↓ is
+     that pair used honestly, and adding moved to one button below the list. */
+  const hdr = extractFn('sectionHeaderHtml');
+  check('a remove control on each section', /removeSection\(/.test(hdr), true);
+  check('and it is a bin, not a minus', /M3 6h18/.test(hdr), true);
+  check('the section can be moved up', /moveSectionUp\(/.test(hdr), true);
+  check('and down', /moveSectionDown\(/.test(hdr), true);
+  /* MATCH THE MARKUP, NOT THE PARAMETER. `o.first` is a local the minifier
+     renames; the word it writes into the HTML is not. */
+  check('the arrow that would do nothing is disabled, not hidden',
+    (hdr.match(/disabled/g) || []).length >= 2, true);
+  check('the name itself renames', /startRenameSection\(/.test(hdr), true);
+  check('adding a section below a section is gone',
+    /function addSectionAfter/.test(src), false);
+  /* ONE WAY IN, AND IT DOES NOT DEPEND ON ALREADY HAVING A SECTION. The old ＋
+     on the ungrouped header existed only because the other ＋ lived on a
+     section header; one button under the list answers both cases. */
+  check('and a single way in, below the list',
     /addSectionAtEnd\(\)/.test(render), true);
-  check('which hangs off the always-present ungrouped header',
-    /ungrouped-head/.test(render), true);
+  check('which does not hang off the ungrouped header any more',
+    /ungrouped-head/.test(render), false);
 
-  /* ---- the collapse toggle must not swallow the new controls ----
+  /* ---- "Other Activities" is drawn by the SAME function as a real section ----
+     Rachel: "it looks different in terms of formatting, make it look exactly
+     like the other sections". It was 11px with 2px tracking, no chevron and no
+     count, against 13px/1.5px with both. */
+  check('one builder draws every section header',
+    (render.match(/sectionHeaderHtml\(/g) || []).length, 2);
+  check('the ungrouped block collapses like the rest',
+    /__ungrouped__/.test(render), true);
+  check('and carries its count', (render.match(/count:/g) || []).length >= 2, true);
+  /* terser rewrites `false` as `!1`, so accept either. */
+  check('but is not renameable, moveable or removable',
+    /editable:(false|!1)/.test(render), true);
+
+  /* ---- the chevron is a real tap target (17 Sep 2026) ---- */
+  check('the chevron is its own button', /class="group-chevron/.test(hdr) && /<button class="group-chevron/.test(hdr), true);
+  check('and it is 38px, not a bare glyph', /\.group-chevron\{width:38px;height:38px/.test(src), true);
+  check('the rotation is on an inner span so the hit area does not rotate',
+    /\.group-chevron i\{/.test(src) && /\.group-chevron\.open i\{transform:rotate\(90deg\)\}/.test(src), true);
+
+  /* ---- the collapse toggle must not swallow the controls ----
      The whole header row is onclick=toggleGroup, so every control inside it
      has to stop the event or renaming a section also folds it shut. */
-  const header = (render.match(/class="group-header"[\s\S]*?class="group-items"/) || [''])[0];
-  ['startRenameSection', 'removeSection', 'addSectionAfter'].forEach((fn) => {
-    const at = header.indexOf(fn);
+  ['startRenameSection', 'removeSection', 'moveSectionUp', 'moveSectionDown'].forEach((fn) => {
+    const at = hdr.indexOf(fn);
     check(fn + ' stops the click reaching the collapse toggle',
-      at > -1 && header.lastIndexOf('event.stopPropagation()', at) > header.lastIndexOf('onclick', at) - 40, true);
+      at > -1 && hdr.lastIndexOf('event.stopPropagation()', at) > hdr.lastIndexOf('onclick', at) - 40, true);
   });
 
   /* ---- the first section is still reachable for someone with no sections ---- */
@@ -3432,12 +3465,15 @@ section('Adding, removing, renaming and undoing a section');
       extractFn('showSectionUndoToast') + ';' +
       extractFn('removeSection') + ';' +
       extractFn('undoRemoveSection') + ';' +
-      extractFn('addSectionAfter') + ';' +
+      extractFn('moveSection') + ';' +
+      extractFn('moveSectionUp') + ';' +
+      extractFn('moveSectionDown') + ';' +
       extractFn('addSectionAtEnd') + ';' +
       extractFn('commitRenameSection') + ';' +
       'return {' +
       ' removeSection:removeSection, undoRemoveSection:undoRemoveSection,' +
-      ' addSectionAfter:addSectionAfter, addSectionAtEnd:addSectionAtEnd,' +
+      ' moveSectionUp:moveSectionUp, moveSectionDown:moveSectionDown,' +
+      ' addSectionAtEnd:addSectionAtEnd,' +
       ' commitRenameSection:commitRenameSection,' +
       ' names:function(){return groups.map(function(g){return g.name})},' +
       ' count:function(){return groups.length},' +
@@ -3457,25 +3493,35 @@ section('Adding, removing, renaming and undoing a section');
     collapsedGroups: { gA: true },
   });
 
-  /* ---- ADD lands where you asked, not at the bottom ---- */
-  let a = build(fresh());
-  a.addSectionAfter('gA');
-  check('a new section lands directly below the one you tapped',
-    a.names(), ['Work', 'New section', 'Leisure']);
-  check('it starts empty', a.members('new1'), []);
-  check('and opens for renaming straight away', a.D._renameStartedOn, 'new1');
-  a.addSectionAfter('gB');
-  check('the last section can be added after too',
-    a.names(), ['Work', 'New section', 'Leisure', 'New section']);
-  /* An id that is no longer there must not silently prepend. */
-  const b = build(fresh());
-  b.addSectionAfter('nope');
-  check('an unknown id appends rather than guessing',
-    b.names(), ['Work', 'Leisure', 'New section']);
+  /* ---- ADD appends, and position is chosen afterwards (17 Sep 2026) ---- */
   const c = build(fresh());
   c.addSectionAtEnd();
-  check('the ungrouped ＋ appends', c.names(), ['Work', 'Leisure', 'New section']);
-  check('and opens that one for renaming', c.D._renameStartedOn, 'new1');
+  check('a new section lands at the end', c.names(), ['Work', 'Leisure', 'New section']);
+  check('it starts empty', c.members('new1'), []);
+  check('and opens for renaming straight away', c.D._renameStartedOn, 'new1');
+
+  /* ---- MOVE is a swap, and it moves nothing but the section ---- */
+  const m = build(fresh());
+  m.moveSectionDown('gA');
+  check('down swaps with the one below', m.names(), ['Leisure', 'Work']);
+  check('the activities in it did not move', m.members('gA'), ['p1', 'p2']);
+  check('nor did anyone else\'s', m.members('gB'), ['p3']);
+  check('nor did the ungrouped one', m.orphans(), ['p4']);
+  m.moveSectionUp('gA');
+  check('and up puts it back', m.names(), ['Work', 'Leisure']);
+  /* The arrows that would fall off the end are disabled in the header; these
+     are the backstop behind them. */
+  m.moveSectionUp('gA');
+  check('up from the top does nothing', m.names(), ['Work', 'Leisure']);
+  m.moveSectionDown('gB');
+  check('down from the bottom does nothing', m.names(), ['Work', 'Leisure']);
+  m.moveSectionUp('nope');
+  check('and an unknown id does nothing at all', m.names(), ['Work', 'Leisure']);
+  /* Collapsed state belongs to the section, not to its slot. */
+  const m2 = build(fresh());
+  m2.moveSectionDown('gA');
+  check('a collapsed section stays collapsed after moving', m2.collapsedOf('gA'), true);
+  check('and the other stays open', m2.collapsedOf('gB'), false);
 
   /* ---- REMOVE takes the section, never its contents ---- */
   const d = build(fresh());
@@ -3576,25 +3622,36 @@ section('Stop sharing keeps the activity (17 Sep 2026)');
     'function getProject(id){return projects.filter(function(x){return x.id===id})[0]}',
     'function detachLedgerListener(id){if(_lgUnsub[id]){try{_lgUnsub[id]()}catch(e){}delete _lgUnsub[id]}}',
     'function attachLedgerListener(id){_attached.push(id);_lgUnsub[id]=function(){}}',
-    'var db={persistSynced(){_persists.push(projects.map(function(x){return x.name}))}};',
-    'var _persists=[];',
+    'var _persists=[],_bin=[],_nid=0;',
+    'function genId(){return "b"+(++_nid)}',
+    'var BIN_DAYS=30,BIN_MAX=30;',
+    'var db={persistSynced(){_persists.push(projects.map(function(x){return x.name}))},',
+    '        readBin(){return _bin.slice()},writeBin(l){_bin=l.slice();return true}};',
     extractFn('isShared'),
     extractFn('ledgerRole'),
     extractFn('isLedgerOwner'),
     extractConstLine('const LEDGER_LOCAL_KEYS='),
     extractFn('hydrateStub'),
     extractFn('pendingInvites'),
+    /* onLedgerGone puts a guest's copy in the removal bin now, so the real
+       binProject has to be in here - a stub would not prove the thing that
+       matters, which is that what lands in the bin is HYDRATED. */
+    extractFn('pruneBin'),
+    extractFn('binProject'),
     extractAsyncFn('unshareLedger'),
     extractFn('isDormantLedger'),
+    extractFn('invitesOutNobodyJoined'),
     extractFn('onLedgerGone'),
     'return {get projects(){return projects},set projects(v){projects=v},',
     ' _lgBase:_lgBase,_lgLoaded:_lgLoaded,_lgUnsub:_lgUnsub,_lgMeta:_lgMeta,',
     ' get toasts(){return _toasts},get deleted(){return _deleted},',
     ' get attached(){return _attached},get persists(){return _persists},',
+    ' get bin(){return _bin},binProject:binProject,',
     ' set currentProjectId(v){currentProjectId=v},',
     ' set firestore(v){firestore=v},',
     ' unshareLedger:unshareLedger,onLedgerGone:onLedgerGone,',
-    ' isDormantLedger:isDormantLedger,isShared:isShared};'
+    ' isDormantLedger:isDormantLedger,invitesOutNobodyJoined:invitesOutNobodyJoined,',
+    ' isShared:isShared};'
   ].join('\n');
 
   /* A fake Firestore whose ledger delete behaves the way the real one does:
@@ -3707,10 +3764,25 @@ section('Stop sharing keeps the activity (17 Sep 2026)');
   const E = makeSandbox();
   E.projects = [{ id: 'p2', name: 'Sabine\'s Trip', ledgerId: 'lg_9', shared: true,
                   role: 'viewer', ownerName: 'Sabine' }];
-  E._lgBase.lg_9 = { history: [] };
+  E._lgBase.lg_9 = { name: 'Sabine\'s Trip', history: [{ id: 'x1' }, { id: 'x2' }] };
+  E._lgLoaded.lg_9 = true;
   E.onLedgerGone('lg_9', 'removed');
   check('a guest who loses access still has it removed', E.projects.length, 0);
   check('and is told why', E.toasts.some(function (t) { return /no longer have access/.test(t); }), true);
+  /* THE WAY BACK (17 Sep 2026). Rachel, after Living Home Decor: "how can the
+     user recover it if smthg like that happens? there should be a way for the
+     user to retrieve it." Being thrown out of a group is a legitimate removal
+     and still removes it - but it is no longer the end of the copy. */
+  check('and a copy is kept so it can be restored', E.bin.length, 1);
+  check('under its own name', (E.bin[0] || {}).name, 'Sabine\'s Trip');
+  check('with the reason recorded', (E.bin[0] || {}).why, 'removed');
+  /* THE PART THAT WOULD SILENTLY NOT WORK: what sits in `projects` for a
+     shared group is a STUB with no money in it. Binning that would give the
+     user back an empty tracker, which is worse than nothing because it looks
+     right. binProject hydrates out of _lgBase first. */
+  check('and its entries, not an empty shell', (E.bin[0] || {}).entries, 2);
+  check('the restored copy is a LOCAL one, not a dead ledger stub',
+    !!((E.bin[0] || {}).project || {}).ledgerId, false);
 
   /* ---- GUARD 3: our own unshare is not an eviction ---- */
   const F = makeSandbox();
@@ -3742,6 +3814,29 @@ section('Stop sharing keeps the activity (17 Sep 2026)');
     G.isDormantLedger({ shared: true, ledgerId: 'lg_1', role: 'viewer', memberCount: 1 }), false);
   check('an unshared activity is not dormant either', G.isDormantLedger({ id: 'x' }), false);
 
+  /* INVITED IS NOT JOINED (Rachel, 17 Sep 2026). A code that has been sent and
+     not yet redeemed is a THIRD state. It is not dormant — something really is
+     outstanding — but it is not "shared" either, and the first pass let it
+     fall through to the "Shared with 0 people" strip. Sharing begins when
+     somebody is in members, not when a code is minted. */
+  const live = t => ({ shared: true, ledgerId: 'lg_1', role: 'owner', memberCount: 1,
+                       pendingInvites: [{ code: 'AB12', participant: t || null, expiresAt: Date.now() + 86400000 }] });
+  check('a sent invite is not dormant', G.isDormantLedger(live('Sabine')), false);
+  check('but it is not shared either — nobody has joined',
+    G.invitesOutNobodyJoined(live('Sabine')), true);
+  check('once somebody joins it is no longer merely invited',
+    G.invitesOutNobodyJoined({ shared: true, ledgerId: 'lg_1', role: 'owner', memberCount: 2,
+                               pendingInvites: [{ code: 'AB12', expiresAt: Date.now() + 86400000 }] }), false);
+  check('an expired code is not an invite out', G.invitesOutNobodyJoined(
+    { shared: true, ledgerId: 'lg_1', role: 'owner', memberCount: 1,
+      pendingInvites: [{ code: 'AB12', expiresAt: 1 }] }), false);
+  check('and neither is no code at all',
+    G.invitesOutNobodyJoined({ shared: true, ledgerId: 'lg_1', role: 'owner', memberCount: 1 }), false);
+  check('a guest never has invites out — minting is the owner\'s alone',
+    G.invitesOutNobodyJoined(live('Sabine')) && G.invitesOutNobodyJoined(
+      { shared: true, ledgerId: 'lg_1', role: 'viewer', memberCount: 1,
+        pendingInvites: [{ code: 'AB12', expiresAt: Date.now() + 86400000 }] }), false);
+
   _unshareChecks.push(done, doneB, doneC, doneF);
 
   /* ---- and the structure that makes all of the above true ---- */
@@ -3767,10 +3862,276 @@ section('Stop sharing keeps the activity (17 Sep 2026)');
   const cu = extractFn('confirmUnshare');
   check('the confirm dialog still promises the history stays', /history stays with you/.test(cu), true);
   check('and says something truer when nothing was ever shared', /isDormantLedger\(/.test(cu), true);
+  const strip = extractFn('sharedStripHtml');
   check('a "Shared with 0 people" strip is no longer drawn',
-    /Not shared with anyone yet/.test(extractFn('sharedStripHtml')), true);
+    /Not shared with anyone yet/.test(strip), true);
+  /* THE WHOLE POINT OF NAMING SABINE: the next tap is a nudge, not a new code.
+     A second trip through Invite someone mints a fresh code and revokes the
+     first, leaving whoever is holding it with something that no longer works. */
+  check('an invite that is out names the person it went to',
+    /Invite sent/.test(strip), true);
+  check('and says they have not joined', /not joined yet/.test(strip), true);
+  check('and offers the SAME code again, not a new one',
+    /resendInvite\(/.test(strip), true);
+  check('it does not offer to mint another from that strip',
+    /Invite sent[\s\S]{0,200}?startInviteFlow\(/.test(strip), false);
+  check('an invite still out is not hidden once somebody has joined',
+    /invites? out/.test(strip), true);
+  /* REMIND IS THE DEFAULT, NOT THE ONLY DOOR. The members dialog is reachable
+     from nowhere else in the app, so dropping Manage from this strip made
+     Cancel invite, Send again and Invite someone unreachable for precisely the
+     activity that had an invite outstanding. Waiting needs no button; the
+     other two each keep one. */
+  check('an invited activity can still reach the members dialog',
+    /Invite sent[\s\S]{0,400}?showLedgerMembers\(/.test(strip), true);
+  check('and the members dialog is still where a code is cancelled',
+    /confirmRevokeInvite\(/.test(extractFn('showLedgerMembers')), true);
+  check('and where the same code is sent again',
+    /resendInvite\(/.test(extractFn('showLedgerMembers')), true);
+  const chip = extractFn('roleChipHtml');
   check('and no badge is shown for a ledger nobody is in',
-    /isDormantLedger\(/.test(extractFn('roleChipHtml')), true);
+    /isDormantLedger\(/.test(chip), true);
+  check('the home card says Invited, not "Shared - 1", until somebody joins',
+    /Invited/.test(chip), true);
+  const cu2 = extractFn('confirmUnshare');
+  check('and Stop sharing says nobody has joined rather than naming nobody',
+    /Nobody has joined yet/.test(cu2), true);
+})();
+
+
+/* ---- 17 Sep 2026: THE WAY BACK, AND THE WAY OUT OF A CATEGORY ------------- */
+section('Removing something is no longer the end of it');
+(function () {
+  const BIN_SRC = [
+    'var projects=[],groups=[],_bin=[],_toasts=[],_nid=0,_saves=0;',
+    'var BIN_DAYS=30,BIN_MAX=30;',
+    'var _lgBase={};',
+    'function genId(){return "n"+(++_nid)}',
+    'function showToast(t){_toasts.push(String(t))}',
+    'function save(){_saves++}',
+    'function renderHome(){}',
+    'function renderRecentlyRemoved(){}',
+    'function getProject(id){return projects.filter(function(x){return x.id===id})[0]}',
+    'function getGroup(id){return groups.filter(function(g){return g.id===id})[0]}',
+    'var db={readBin(){return _bin.slice()},writeBin(l){_bin=l.slice(0,BIN_MAX);return true}};',
+    extractConstLine('const LEDGER_LOCAL_KEYS='),
+    extractFn('isShared'),
+    extractFn('hydrateStub'),
+    extractFn('pruneBin'),
+    extractFn('binProject'),
+    extractFn('daysLeftInBin'),
+    extractFn('binReasonText'),
+    extractFn('restoreFromBin'),
+    'return {get projects(){return projects},set projects(v){projects=v},',
+    ' set groups(v){groups=v},_lgBase:_lgBase,',
+    ' get bin(){return _bin},set bin(v){_bin=v},get toasts(){return _toasts},',
+    ' binProject:binProject,restoreFromBin:restoreFromBin,pruneBin:pruneBin,',
+    ' daysLeftInBin:daysLeftInBin,binReasonText:binReasonText};'
+  ].join('\n');
+  const mk = () => new Function(BIN_SRC)();
+
+  /* ---- a plain delete is recoverable ---- */
+  const A = mk();
+  const local = { id: 'p1', name: 'Kitchen Renovation', type: 'project', groupId: 'gA',
+                  history: [{ id: 'e1' }, { id: 'e2' }, { id: 'e3' }] };
+  A.projects = [local];
+  A.groups = [{ id: 'gA', name: 'Home' }];
+  A.binProject(local, 'deleted');
+  A.projects = [];
+  check('what was deleted is in the bin', A.bin.length, 1);
+  check('with its entry count on the row', A.bin[0].entries, 3);
+  A.restoreFromBin(A.bin[0].binId);
+  check('and comes back', A.projects.length, 1);
+  check('with its entries', (A.projects[0].history || []).length, 3);
+  check('into the section it came from', A.projects[0].groupId, 'gA');
+  check('and leaves the bin', A.bin.length, 0);
+
+  /* ---- A SHARED TRACKER IS A STUB. Binning it without hydrating would hand
+     back an empty tracker that LOOKS right, which is worse than nothing. ---- */
+  const B = mk();
+  const stub = { id: 'p2', name: 'Rome Trip', type: 'project', ledgerId: 'lg_2',
+                 shared: true, role: 'viewer', ownerName: 'Sam', memberCount: 3, balance: 0 };
+  B.projects = [stub];
+  B._lgBase.lg_2 = { name: 'Rome Trip', participants: ['Sam', 'Rachel'],
+                     history: [{ id: 'e1' }, { id: 'e2' }, { id: 'e3' }, { id: 'e4' }] };
+  B.binProject(stub, 'removed');
+  check('a shared tracker is hydrated on the way in', B.bin[0].entries, 4);
+  check('and keeps its participants', (B.bin[0].project.participants || []).join(','), 'Sam,Rachel');
+  check('what comes back is local, not a dead stub', !!B.bin[0].project.shared, false);
+  check('with no ledger id', B.bin[0].project.ledgerId === undefined, true);
+  check('and no stale member count', B.bin[0].project.memberCount === undefined, true);
+
+  /* ---- RESTORING MUST NEVER LAND ON TOP OF SOMETHING LIVE ---- */
+  const C = mk();
+  const p3 = { id: 'p3', name: 'Pilates', history: [{ id: 'e1' }] };
+  C.projects = [p3];
+  C.binProject(p3, 'deleted');
+  /* still there - restored on another device, or the delete never synced */
+  C.restoreFromBin(C.bin[0].binId);
+  check('a colliding id does not overwrite the live one', C.projects.length, 2);
+  check('the restored copy took a fresh id', C.projects[0].id !== 'p3', true);
+  check('and the live one is untouched', C.projects[1].id, 'p3');
+
+  /* ---- a section that no longer exists must not hide the card ---- */
+  const D = mk();
+  const p4 = { id: 'p4', name: 'Cello', groupId: 'gGone', history: [] };
+  D.projects = [p4];
+  D.binProject(p4, 'deleted');
+  D.projects = [];
+  D.restoreFromBin(D.bin[0].binId);
+  check('a restored card whose section is gone goes to Other Activities',
+    D.projects[0].groupId, null);
+
+  /* ---- the two limits ---- */
+  const E = mk();
+  const old = Date.now() - 31 * 86400000;
+  check('anything past 30 days is dropped',
+    E.pruneBin([{ removedAt: old }, { removedAt: Date.now() }]).length, 1);
+  const many = [];
+  for (let i = 0; i < 40; i++) many.push({ removedAt: Date.now() - i });
+  check('and the bin never holds more than 30', E.pruneBin(many).length, 30);
+  check('a row knows how long it has left', E.daysLeftInBin(Date.now()), 30);
+  check('and an expired one reports nothing left', E.daysLeftInBin(old), 0);
+  check('the reason is spelled out for a guest', E.binReasonText('removed'), 'Your access was revoked');
+  check('and for leaving', E.binReasonText('left'), 'You left this group');
+
+  /* ---- every path that removes for good goes through the bin ---- */
+  ['doDeleteCurrentProject', 'doDeleteProject', 'leaveLedgerDoc', 'onLedgerGone'].forEach(function (fn) {
+    check(fn + ' keeps a copy', /binProject\(/.test(extractAsyncFn(fn)), true);
+  });
+  /* ARCHIVING IS NOT A REMOVAL. It stays in `projects` and already has its own
+     Restore - binning it too would show one tracker in two lists. */
+  check('archiving does not', /binProject\(/.test(extractFn('doArchive')), false);
+  /* THE BIN IS DEVICE-LOCAL, AND THAT IS THE DESIGN, NOT AN OMISSION. Every
+     binned tracker carries its whole history; users/{uid} is one Firestore
+     document with a hard 1MB ceiling that this app rewrites on EVERY save. Put
+     the bin in there and saves get heavier and eventually fail - a data-loss
+     bug introduced by a data-loss fix. So it belongs to the LOCAL layer, which
+     the architecture note above LOCAL_KEYS says must never touch the synced
+     one. */
+  check('the bin is a local key',
+    new RegExp('bin:' + Q + 'tally_removed_bin' + Q).test(extractConstLine('const LOCAL_KEYS=')), true);
+  check('and not a synced one', /bin/.test(extractConstLine('const SYNCED_KEYS=')), false);
+  check('but still scoped per account', /scopedKey\(LOCAL_KEYS\.bin\)/.test(src), true);
+  check('Settings has somewhere to show it', /id="recentlyRemovedList"/.test(src), true);
+})();
+
+section('A category can be taken off again');
+(function () {
+  /* Rachel, 17 Sep 2026: "i tried editing a transaction to deselect category,
+     but there is no way to deselect a category". The mechanism existed - the
+     active chip toggles off - and nothing said so. */
+  /* RUN THE PICKER, do not read it. Every one of these once spelled a
+     parameter name or a quote character, and every one of them passed on the
+     master and failed on the shipped build - BUILD NOTES step 7, again. */
+  const PICK_SRC = [
+    'function esc(s){return String(s==null?"":s)}',
+    extractFn('getUsedCategories'),
+    extractFn('buildCategoryPicker'),
+    'return buildCategoryPicker;'
+  ].join('\n');
+  const pick = new Function(PICK_SRC)();
+  const proj = { history: [{ type: 'charge', costItem: 'Rent' }, { type: 'charge', costItem: 'Bills' }] };
+  const blank = pick(proj, 'x', '', 'charge');
+  const chosen = pick(proj, 'x', 'Rent', 'charge');
+  const bulk = pick(proj, 'bulkCat', '', '', true);
+  check('the picker offers "No category" outright', /No category/.test(blank), true);
+  check('lit when nothing is chosen', /cat-chip-none active/.test(blank), true);
+  check('and not lit once a category is chosen', /cat-chip-none active/.test(chosen), false);
+  check('the chosen one is lit instead', /class="cat-chip active" data-cat="Rent"/.test(chosen), true);
+  check('and it is not offered in the bulk dialog, where it would do nothing',
+    /No category/.test(bulk), false);
+  check('though the real categories still are', /data-cat="Bills"/.test(bulk), true);
+  /* Tapping the lit chip has always cleared the value; now the row shows it. */
+  const sel = extractFn('selectCatChip');
+  check('clearing a chip lights "No category" instead of lighting nothing',
+    /cat-chip-none/.test(sel), true);
+  check('and "No category" itself never toggles off',
+    /function selectNoCat/.test(src) && !/wasActive/.test(extractFn('selectNoCat')), true);
+  /* The edit path already wrote the empty string back - that half was fine. */
+  check('the edit form still writes an empty category back',
+    new RegExp('costItem=[\\w$]+\\.value\\|\\|' + Q + Q).test(extractFn('doEditProjectEntry')), true);
+
+  /* ---- and taking them ALL off, which had no control at all ---- */
+  const CAT_SRC = [
+    'var currentProjectId="p1",_toasts=[],_rendered=0,_closed=0,_saved=0;',
+    'var projects=[{id:"p1",name:"Orea Rental",history:[',
+    '  {id:"e1",type:"charge",amount:10,costItem:"Rent",note:"March"},',
+    '  {id:"e2",type:"charge",amount:20,costItem:"Bills",note:"Water"},',
+    '  {id:"e3",type:"payment",amount:5,costItem:"Rent",note:""},',
+    '  {id:"e4",type:"charge",amount:7,note:"Uncategorized one"},',
+    '  {id:"e5",type:"settlement",amount:3,note:"settled"}]}];',
+    'function getProject(id){return projects.filter(function(x){return x.id===id})[0]}',
+    'function requireEditRights(){return true}',
+    'function syncBalance(){}',
+    'function showToast(t){_toasts.push(String(t))}',
+    'function closeOverlay(){_closed++}',
+    'function renderProjectDetail(){_rendered++}',
+    'var db={saveProject(){_saved++}};',
+    extractFn('categorizedCount'),
+    extractFn('doRemoveAllCategories'),
+    'return {get projects(){return projects},get toasts(){return _toasts},',
+    ' get saved(){return _saved},categorizedCount:categorizedCount,',
+    ' doRemoveAllCategories:doRemoveAllCategories};'
+  ].join('\n');
+  const C = new Function(CAT_SRC)();
+  check('it counts what actually carries a category', C.categorizedCount(C.projects[0]), 3);
+  C.doRemoveAllCategories();
+  const h = C.projects[0].history;
+  check('every category is gone', h.filter(function (e) { return e.costItem; }).length, 0);
+  check('and every entry is still there', h.length, 5);
+  check('with its amount untouched', h[0].amount, 10);
+  check('a note that was already text is left alone', h[0].note, 'March');
+  /* A row whose note was blank took the category name as its title when it was
+     created; clearing the label must not blank the row. */
+  check('and a blank note is backstopped rather than emptied', h[2].note, 'Rent');
+  check('it saves once', C.saved, 1);
+  check('and says how many changed', /3 transactions are no longer categorized/.test(C.toasts.join('|')), true);
+  C.doRemoveAllCategories();
+  check('running it again changes nothing', C.categorizedCount(C.projects[0]), 0);
+
+  /* The control has to be where she was standing when she wanted it: the
+     "Everything is categorized" dialog was a dead end with one Done button. */
+  const dlg = extractFn('showCategorizeExpenses');
+  check('the dead-end dialog now offers it', (dlg.match(/removeAllCategoriesBtnHtml\(/g) || []).length, 2);
+  const btn = extractFn('removeAllCategoriesBtnHtml');
+  check('but not to a viewer', /canWriteEntries\(/.test(btn), true);
+  const BTN_SRC = [
+    'var _may=true;',
+    'function canWriteEntries(){return _may}',
+    extractFn('categorizedCount'),
+    extractFn('removeAllCategoriesBtnHtml'),
+    'return {html:removeAllCategoriesBtnHtml,deny:function(){_may=false}};'
+  ].join('\n');
+  const B = new Function(BTN_SRC)();
+  const withCats = { history: [{ type: 'charge', costItem: 'Rent' }] };
+  const without = { history: [{ type: 'charge' }] };
+  check('it appears when there is something to remove', B.html(withCats).length > 0, true);
+  check('and not when there is nothing to remove', B.html(without), '');
+  B.deny();
+  check('and never to a viewer', B.html(withCats), '');
+  check('and the confirm says nothing is deleted',
+    /Nothing is deleted/.test(extractFn('confirmRemoveAllCategories')), true);
+})();
+
+section('A screenshot of a tracker says Tally on it');
+(function () {
+  /* Rachel, 17 Sep 2026: "i tried to take a screenshot of the screen to share
+     with someone (didnt want to use the whatsapp button), the screenshot
+     doesnt show the tally logo and name." The mark lived only on the home
+     screen, which is not the screen anyone photographs. */
+  check('the brand strip exists', /class="brand-strip"/.test(src), true);
+  ['projectDetailView', 'detailView', 'lendingDetailView'].forEach(function (v) {
+    const at = src.indexOf('id="' + v + '"');
+    const next = src.indexOf('class="page-header"', at);
+    const brand = src.indexOf('class="brand-strip"', at);
+    check(v + ' carries it above the title', brand > -1 && brand < next, true);
+  });
+  check('it names the app, not just the mark', /brand-strip-text">Tally</.test(src), true);
+  /* Above the fold on purpose: a strip at the bottom of a long history is not
+     in the picture. */
+  check('and it is the same mark as the home screen',
+    (src.match(/rect width="48" height="48" rx="11" fill="#e67e22"/g) || []).length >= 3, true);
 })();
 
 /* ============================ RESULTS ============================ */
