@@ -3544,8 +3544,237 @@ section('Adding, removing, renaming and undoing a section');
   check('committing with no field on screen does not throw', threw, 'null');
 })();
 
+// Node runs this file top-to-bottom, so collect the async unshare results too.
+const _unshareChecks = [];
+
+/* ---- 17 Sep 2026: "Stop sharing" DELETED THE ACTIVITY ---------------------
+   Reported by Rachel: Stop sharing on "Living Home Decor" and it was gone —
+   off the home screen, not in the archive, gone from the account. The confirm
+   dialog had just said "All the history stays with you".
+
+   unshareLedger deleted ledgers/{id} while attachLedgerListener was still
+   listening to it. Firestore applies a local delete immediately, so the
+   listener fired with a snapshot whose .exists is false, and the first line of
+   that handler is onLedgerGone(ledgerId,'deleted') — which splices the project
+   out of `projects` and persists the shortened list to the device AND to
+   users/{uid}. Unrecoverable, because users/{uid} holds only a STUB of a
+   shared activity: the history lives in the ledger document and nowhere else.
+
+   THESE TESTS RUN THE REAL FUNCTIONS. The fake delete() calls onLedgerGone
+   exactly the way the real snapshot handler does — synchronously, before the
+   delete promise resolves — which is the whole shape of the bug. A re-typed
+   copy of either function here would keep passing while the app broke. */
+section('Stop sharing keeps the activity (17 Sep 2026)');
+(function () {
+  const UNSHARE_SRC = [
+    'var _lgBase={},_lgUnsub={},_lgLoaded={},_lgMeta={},_unsharing={};',
+    'var projects=[],currentProjectId=null,_toasts=[],_deleted=[],_attached=[];',
+    'var currentUser={uid:"u_rachel",isAnonymous:false};',
+    'function showToast(t){_toasts.push(String(t))}',
+    'function refreshCurrentView(){}',
+    'function goHome(){}',
+    'function getProject(id){return projects.filter(function(x){return x.id===id})[0]}',
+    'function detachLedgerListener(id){if(_lgUnsub[id]){try{_lgUnsub[id]()}catch(e){}delete _lgUnsub[id]}}',
+    'function attachLedgerListener(id){_attached.push(id);_lgUnsub[id]=function(){}}',
+    'var db={persistSynced(){_persists.push(projects.map(function(x){return x.name}))}};',
+    'var _persists=[];',
+    extractFn('isShared'),
+    extractFn('ledgerRole'),
+    extractFn('isLedgerOwner'),
+    extractConstLine('const LEDGER_LOCAL_KEYS='),
+    extractFn('hydrateStub'),
+    extractFn('pendingInvites'),
+    extractAsyncFn('unshareLedger'),
+    extractFn('isDormantLedger'),
+    extractFn('onLedgerGone'),
+    'return {get projects(){return projects},set projects(v){projects=v},',
+    ' _lgBase:_lgBase,_lgLoaded:_lgLoaded,_lgUnsub:_lgUnsub,_lgMeta:_lgMeta,',
+    ' get toasts(){return _toasts},get deleted(){return _deleted},',
+    ' get attached(){return _attached},get persists(){return _persists},',
+    ' set currentProjectId(v){currentProjectId=v},',
+    ' set firestore(v){firestore=v},',
+    ' unshareLedger:unshareLedger,onLedgerGone:onLedgerGone,',
+    ' isDormantLedger:isDormantLedger,isShared:isShared};'
+  ].join('\n');
+
+  /* A fake Firestore whose ledger delete behaves the way the real one does:
+     it notifies the live listener BEFORE the promise settles. */
+  function makeSandbox(opts) {
+    const o = opts || {};
+    const sb = new Function('var firestore;' + UNSHARE_SRC)();
+    sb.firestore = {
+      collection: function (name) {
+        return {
+          where: function () { return { get: function () { return Promise.resolve({ forEach: function () {} }); } }; },
+          doc: function (id) {
+            return {
+              delete: function () {
+                if (o.deleteFails) return Promise.reject(new Error('unavailable'));
+                sb.deleted.push(name + '/' + id);
+                /* THIS IS THE BUG, REPRODUCED: the local delete is applied at
+                   once and the snapshot handler's !exists branch runs. */
+                if (name === 'ledgers' && sb._lgUnsub[id]) sb.onLedgerGone(id, 'deleted');
+                return Promise.resolve();
+              }
+            };
+          }
+        };
+      }
+    };
+    return sb;
+  }
+
+  function sharedProject() {
+    /* A STUB, which is all users/{uid} ever holds for a shared activity. */
+    return { id: 'p1', name: 'Living Home Decor', type: 'project', ledgerId: 'lg_1',
+             shared: true, role: 'owner', ownerUid: 'u_rachel', ownerName: 'Rachel',
+             memberCount: 1, balance: 0 };
+  }
+  function ledgerData() {
+    return { name: 'Living Home Decor', type: 'project', currency: 'USD',
+             participants: ['Rachel', 'Sabine'],
+             history: [{ id: 'e1', type: 'charge', amount: 120 },
+                       { id: 'e2', type: 'charge', amount: 45 },
+                       { id: 'e3', type: 'payment', amount: 60 }] };
+  }
+
+  /* ---- the report, start to finish ---- */
+  const A = makeSandbox();
+  const pA = sharedProject();
+  A.projects = [pA];
+  A._lgBase.lg_1 = ledgerData();
+  A._lgLoaded.lg_1 = true;
+  A._lgUnsub.lg_1 = function () {};   // a live listener, as in the app
+
+  const done = A.unshareLedger(pA).then(function () {
+    check('the activity is still on the home screen', A.projects.length, 1);
+    check('and it is the same activity', (A.projects[0] || {}).name, 'Living Home Decor');
+    check('with every entry intact', ((A.projects[0] || {}).history || []).length, 3);
+    check('and its participants', ((A.projects[0] || {}).participants || []).join(','), 'Rachel,Sabine');
+    check('it is no longer shared', !!(A.projects[0] || {}).shared, false);
+    check('and holds no ledger id', (A.projects[0] || {}).ledgerId === undefined, true);
+    check('the ledger document was deleted', A.deleted.indexOf('ledgers/lg_1') > -1, true);
+    check('the listener came off BEFORE the delete', A._lgUnsub.lg_1 === undefined, true);
+    /* The list that was written up to users/{uid} must contain it. Writing a
+       list without it is what made 17 Sep unrecoverable. */
+    check('every saved copy of the list still names it',
+      A.persists.length > 0 && A.persists.every(function (names) { return names.indexOf('Living Home Decor') > -1; }), true);
+    /* unshareLedger itself is silent; doUnshare is what speaks. Checked
+       below against its source rather than faked here. */
+  });
+
+  /* ---- an unshare that never reaches the server changes nothing ---- */
+  const B = makeSandbox({ deleteFails: true });
+  const pB = sharedProject();
+  B.projects = [pB];
+  B._lgBase.lg_1 = ledgerData();
+  B._lgLoaded.lg_1 = true;
+  B._lgUnsub.lg_1 = function () {};
+  const doneB = B.unshareLedger(pB).then(function () {
+    check('a failed delete should have thrown', 'resolved', 'threw');
+  }, function () {
+    check('a failed unshare leaves it shared', !!B.projects[0].shared, true);
+    check('a failed unshare keeps the ledger id', B.projects[0].ledgerId, 'lg_1');
+    check('a failed unshare puts the listener back', B.attached.indexOf('lg_1') > -1, true);
+    check('and it is still on the home screen', B.projects.length, 1);
+  });
+
+  /* ---- GUARD 1: never delete the only copy before this device has it ---- */
+  const C = makeSandbox();
+  const pC = sharedProject();
+  C.projects = [pC];
+  /* no _lgBase, no _lgLoaded — the ledger snapshot has not landed yet */
+  const doneC = C.unshareLedger(pC).then(function () {
+    check('unsharing an unloaded ledger should have thrown', 'resolved', 'threw');
+  }, function (e) {
+    check('it refuses while the ledger is still loading', e.message, 'ledger-not-loaded');
+    check('and deletes nothing at all', C.deleted.length, 0);
+    check('and the activity is untouched', C.projects.length, 1);
+  });
+
+  /* ---- GUARD 4: an owner is never evicted from their own activity ---- */
+  const D = makeSandbox();
+  const pD = sharedProject();
+  D.projects = [pD];
+  D._lgBase.lg_1 = ledgerData();
+  D._lgLoaded.lg_1 = true;
+  D.onLedgerGone('lg_1', 'deleted');
+  check('an owner keeps the activity when the ledger vanishes', D.projects.length, 1);
+  check('and gets its history folded back', (D.projects[0].history || []).length, 3);
+  check('and it comes back as an ordinary local activity', !!D.projects[0].shared, false);
+
+  /* ---- but a GUEST is still dropped, which is what onLedgerGone is for ---- */
+  const E = makeSandbox();
+  E.projects = [{ id: 'p2', name: 'Sabine\'s Trip', ledgerId: 'lg_9', shared: true,
+                  role: 'viewer', ownerName: 'Sabine' }];
+  E._lgBase.lg_9 = { history: [] };
+  E.onLedgerGone('lg_9', 'removed');
+  check('a guest who loses access still has it removed', E.projects.length, 0);
+  check('and is told why', E.toasts.some(function (t) { return /no longer have access/.test(t); }), true);
+
+  /* ---- GUARD 3: our own unshare is not an eviction ---- */
+  const F = makeSandbox();
+  const pF = sharedProject();
+  F.projects = [pF];
+  F._lgBase.lg_1 = ledgerData();
+  F._lgLoaded.lg_1 = true;
+  F._lgUnsub.lg_1 = function () {};
+  const doneF = F.unshareLedger(pF).then(function () {
+    /* A late snapshot from any other path must now be inert. */
+    F.onLedgerGone('lg_1', 'deleted');
+    check('a late snapshot after an unshare cannot remove it', F.projects.length, 1);
+    check('and cannot empty it', (F.projects[0].history || []).length, 3);
+  });
+
+  /* ---- the other half of the report: "shared" with nobody ---- */
+  const G = makeSandbox();
+  check('an owner alone with no invites is not really shared',
+    G.isDormantLedger({ shared: true, ledgerId: 'lg_1', role: 'owner', memberCount: 1 }), true);
+  check('an expired invite does not keep it alive',
+    G.isDormantLedger({ shared: true, ledgerId: 'lg_1', role: 'owner', memberCount: 1,
+                        pendingInvites: [{ code: 'AB12', expiresAt: 1 }] }), true);
+  check('a live invite does',
+    G.isDormantLedger({ shared: true, ledgerId: 'lg_1', role: 'owner', memberCount: 1,
+                        pendingInvites: [{ code: 'AB12', expiresAt: Date.now() + 86400000 }] }), false);
+  check('and so does somebody having joined',
+    G.isDormantLedger({ shared: true, ledgerId: 'lg_1', role: 'owner', memberCount: 2 }), false);
+  check('a guest\'s ledger is never dormant — it is not theirs to fold back',
+    G.isDormantLedger({ shared: true, ledgerId: 'lg_1', role: 'viewer', memberCount: 1 }), false);
+  check('an unshared activity is not dormant either', G.isDormantLedger({ id: 'x' }), false);
+
+  _unshareChecks.push(done, doneB, doneC, doneF);
+
+  /* ---- and the structure that makes all of the above true ---- */
+  const un = extractAsyncFn('unshareLedger');
+  const iDetach = un.indexOf('detachLedgerListener');
+  const iDelete = un.search(/collection\(["']ledgers["']\)\.doc\([\w$]+\)\.delete\(\)/);
+  check('the listener is detached before the ledger is deleted, not after',
+    iDetach > -1 && iDelete > -1 && iDetach < iDelete, true);
+  check('it will not start without the ledger loaded',
+    /_lgLoaded\[[\w$]+\]/.test(un), true);
+  const og = extractFn('onLedgerGone');
+  check('onLedgerGone bails out on our own unshare', /_unsharing\[/.test(og), true);
+  check('onLedgerGone will not splice an owner out', /isLedgerOwner\(/.test(og), true);
+  /* If this ever stops being the call the !exists branch makes, the behavioural
+     tests above are no longer testing the path the app actually takes. */
+  check('a vanished ledger still routes through onLedgerGone',
+    /!\s*[\w$]+\.exists\s*\)\s*\{\s*onLedgerGone\(/.test(extractFn('attachLedgerListener')), true);
+  /* The dialog that talked the user through the door. */
+  const du = extractAsyncFn('doUnshare');
+  check('the toast after unsharing says the history came with it', /history/i.test(du), true);
+  check('a refused unshare says nothing was changed', /nothing was changed/i.test(du), true);
+  check('and the still-loading case gets its own message', /ledger-not-loaded/.test(du), true);
+  const cu = extractFn('confirmUnshare');
+  check('the confirm dialog still promises the history stays', /history stays with you/.test(cu), true);
+  check('and says something truer when nothing was ever shared', /isDormantLedger\(/.test(cu), true);
+  check('a "Shared with 0 people" strip is no longer drawn',
+    /Not shared with anyone yet/.test(extractFn('sharedStripHtml')), true);
+  check('and no badge is shown for a ledger nobody is in',
+    /isDormantLedger\(/.test(extractFn('roleChipHtml')), true);
+})();
+
 /* ============================ RESULTS ============================ */
-Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks).concat(_pushChecks)).then(function () {
+Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks).concat(_pushChecks).concat(_unshareChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
   process.exit(fail ? 1 : 0);
 }).catch(function (e) {
