@@ -2065,51 +2065,42 @@ section('Sections are filed on the home screen, not asked at creation');
     /New Section/.test(src) && /Create Section/.test(src), true);
 })();
 
-/* ---- THREE WAYS TO SHARE, NAMED IN PLAIN WORDS ----
-   Since v98, showShareSummary went straight to startInviteFlow, so the
-   text-only summary was unreachable - the commonest thing you want to do. And
-   the role picker named roles ("Viewer", "Editor") which mean nothing to
-   somebody who has not joined yet. */
-section('Three share options');
+/* ---- THE SHARE BUTTON SENDS A MESSAGE. THAT IS ALL IT DOES ----
+   (Rachel, 18 Sep 2026: "first the whatsapp share icon is only for sharing the
+   balance as a text message, no ledger invitation. no three options anymore.
+   it just prepares teh text message and thats it.")
+
+   THE HISTORY OF THIS ONE BUTTON IS THE ARGUMENT FOR THE CHANGE. v98 made
+   showShareSummary begin `if(sharingOn()){startInviteFlow();return}`, which
+   left the text-only summary unreachable. v103 replaced that with
+   showShareChoice, a chooser of three. v107 then had to route three MORE share
+   buttons into that chooser, because each carried its own copy of the v98 line
+   - the "four front doors" release. Every step answered the same question in
+   the wrong place: a button that both sends a balance AND grants access has to
+   ask which you meant, of everybody, every time.
+   Inviting is its own button in the header now, so there is nothing to ask.
+   These assertions pin the ABSENCE of the chooser as hard as the old ones
+   pinned its contents - that is the point of the release. */
+section('The share button sends the balance and nothing else');
 (function () {
-  const chooser = extractFn('showShareChoice');
-  check('option 1 sends the balance only', /Send the balance only/.test(chooser), true);
-  check('option 1 says they get no access',
-    /no access to this tracker/.test(chooser), true);
-  check('option 2 is described by what they can do, not by a role name',
-    /they can look/.test(chooser), true);
-  check('option 3 is described by what they can do',
-    /they can add entries/.test(chooser), true);
-  check('the options do not lead with the word Viewer',
-    /font-weight:700">👁 Viewer/.test(chooser), false);
-  check('option 2 passes the role straight through',
-    /startInviteFlow\([^)]*viewer/.test(chooser), true);
-  check('option 3 passes the role straight through',
-    /startInviteFlow\([^)]*editor/.test(chooser), true);
-
   const entry = extractFn('showShareSummary');
-  check('the share button opens the chooser rather than an invite',
-    /showShareChoice\(/.test(entry), true);
-  check('someone who cannot mint a code still gets the balance text',
-    /shareTextFor\(/.test(entry), true);
-
-  /* ---- 18 Sep 2026: ALL FOUR SHARE BUTTONS, NOT ONE ----
-     Rachel reported the light three-way chooser had "reverted back to the old"
-     two black Viewer/Editor buttons. It had not reverted - v103 wired the
-     chooser to showShareSummary, which is the Share button on the PROJECT
-     screen and nothing else. The activity, group and lending buttons each still
-     opened `if(sharingOn()){startInviteFlow();return}`, and startInviteFlow
-     with no role falls through to showInviteRolePick: two options, both the
-     dark .dialog-btn-save. She tested v103 on a project and everything after it
-     on something else. Four front doors, one of them fixed. */
+  check('the share button sends the balance text', /shareTextFor\(/.test(entry), true);
+  check('it opens WhatsApp itself rather than a dialog',
+    /openWhatsApp\(/.test(entry), true);
+  check('it does not start an invite', /startInviteFlow/.test(entry), false);
+  check('and there is no chooser left to open',
+    /function showShareChoice/.test(src), false);
+  /* THE WHOLE POINT: no route from any share control to an invite. Four
+     buttons called some show*ShareSummary and v107 had to fix them one by one;
+     a guard on all four is cheaper than remembering. */
   ['showGroupShareSummary', 'showLendingShareSummary', 'showActivityShareSummary'].forEach(function (fn) {
     const f = extractFn(fn);
-    check(fn + ' goes through the same chooser', /showShareSummary\(\)/.test(f), true);
-    check('and ' + fn + ' no longer jumps straight to an invite',
-      /startInviteFlow\(\)/.test(f), false);
+    check(fn + ' goes through the one share function', /showShareSummary\(\)/.test(f), true);
+    check('and ' + fn + ' does not start an invite',
+      /startInviteFlow/.test(f), false);
   });
   /* Each type still sends its OWN text - a lending circle's summary is not a
-     project's - so the chooser asks shareTextFor which one to build. */
+     project's - so shareTextFor decides which one to build. */
   const dispatch = extractFn('shareTextFor');
   check('the balance text is chosen by tracker type',
     /buildLendingSummaryText\(/.test(dispatch) && /buildActivitySummaryText\(/.test(dispatch) &&
@@ -2120,25 +2111,67 @@ section('Three share options');
     check(fn + ' builds the text and does not send it',
       /openWhatsApp\(/.test(extractFn(fn)), false);
   });
-  /* AND THE LAST TWO BLACK SLABS. showInviteRolePick is still reachable when a
-     participant is picked before a role, and it kept the ink buttons. */
-  const rolePick = extractFn('showInviteRolePick');
-  check('the role picker uses the light buttons too',
-    /share-choice-btn/.test(rolePick), true);
-  check('and no longer uses the ink button',
-    /dialog-btn-save/.test(rolePick), false);
+})();
 
-  // Having chosen the role up front, nobody should be asked for it again.
-  // `role` is a parameter and therefore renamed by the minifier, so these
-  // assert on the GLOBAL function names the branches call - those survive.
+/* ---- INVITE IS ITS OWN BUTTON, IN THE HEADER (Rachel, 18 Sep 2026) ----
+   "on gthe other hand, we add an Invite button next to Edit and Remove on the
+   top, so it will be Invite, Edit, Remove. when they click invite thats where
+   they get to select viewer or editor, teh code gets generated." */
+section('Invite is a header button next to Edit and Remove');
+(function () {
+  /* THE MARKUP, not a comment: three ids, one per detail screen. The lending
+     screen's Edit and Remove had no ids at all until this release, which is
+     exactly why applyRoleLockdown could never reach them. */
+  ['projInviteBtn', 'detailInviteBtn', 'lendInviteBtn'].forEach(function (id) {
+    check(id + ' is in the page header', new RegExp('id="' + id + '"').test(src), true);
+  });
+  check('the lending header gained ids so it can be locked down too',
+    /id="lendEditBtn"/.test(src) && /id="lendRemoveBtn"/.test(src), true);
+  /* ORDER MATTERS AND WAS ASKED FOR: "it will be Invite, Edit, Remove". */
+  ['proj', 'detail', 'lend'].forEach(function (pre) {
+    const i = src.indexOf('id="' + pre + 'InviteBtn"');
+    const e = src.indexOf('id="' + pre + 'EditBtn"');
+    const r = src.indexOf('id="' + pre + 'RemoveBtn"');
+    check(pre + ': Invite comes before Edit, which comes before Remove',
+      i > -1 && e > i && r > e, true);
+  });
+  const lock = extractFn('applyRoleLockdown');
+  check('all three invite buttons are driven from one place',
+    /projInviteBtn/.test(lock) && /detailInviteBtn/.test(lock) && /lendInviteBtn/.test(lock), true);
+  check('the label is set on every render, not once',
+    /Manage Invites/.test(lock) && /hasJoinedMembers\(/.test(lock), true);
+  /* OWNER ONLY. `admin` is a local the minifier renames, so read the flag back
+     OUT of the function by the control that is known to use it, exactly as the
+     viewer-lockdown assertions do. */
+  const am = new RegExp('([\\w$]+)\\(' + Q + 'projEditBtn' + Q + ',([\\w$]+)\\)').exec(lock) || [];
+  check('the invite button is gated on the same owner flag as Edit and Remove',
+    !!(am[2] && new RegExp('=\\s*sharingOn\\(\\)&&' + am[2]).test(lock)), true);
+  const open = extractFn('openInviteOrManage');
+  check('tapping it invites when nobody has joined', /startInviteFlow\(\)/.test(open), true);
+  check('and manages when somebody has', /showLedgerMembers\(\)/.test(open), true);
+  check('which door opens is the same question the label answers',
+    /hasJoinedMembers\(/.test(open), true);
+
+  /* Having chosen the role up front, nobody should be asked for it again.
+     `role` is a parameter and therefore renamed by the minifier, so these
+     assert on the GLOBAL function names the branches call - those survive. */
   const flow = extractFn('startInviteFlow');
   check('a preselected role can go straight to creating the invite',
     /doCreateInvite\(/.test(flow), true);
-  check('with no role preselected the role question is still asked',
+  check('with no role preselected the role question is asked',
     /showInviteRolePick\(/.test(flow), true);
   const pick = extractFn('pickInviteParticipant');
   check('picking a participant can go straight to creating the invite',
     /doCreateInvite\(/.test(pick), true);
+  /* AND THE ROLE PICKER KEEPS THE LIGHT BUTTONS. It is the invite flow itself
+     now that the chooser is gone, so this is the screen a tap on Invite
+     reaches - it must not go back to the two black slabs. */
+  const rolePick = extractFn('showInviteRolePick');
+  check('the role picker uses the light buttons',
+    /share-choice-btn/.test(rolePick), true);
+  check('and not the ink button', /dialog-btn-save/.test(rolePick), false);
+  check('it still offers exactly the two capacities',
+    /doCreateInvite\(\\?.viewer/.test(rolePick) && /doCreateInvite\(\\?.editor/.test(rolePick), true);
 })();
 
 /* ---- Category examples cover trips as well as builds (27 Aug 2026) ----
@@ -2375,38 +2408,78 @@ section('Reminder copy says it is a nudge to log, not to attend');
    Store URL actually set). Nothing is inferred from an absence, so an
    unplaceable device is shown the page rather than sent somewhere.
    The behavioural assertions are in "/get/ sends a phone to its own store". */
-section('Shared links point at one link that knows the device');
+section('Every message sends people to a store, never to the web');
 (function () {
-  /* REVISED 17 Sep 2026, AND THIS IS NOT A REVERT OF 16 SEP - read both.
-     16 Sep removed the PROSE "App Store, Google Play or web", and that stays
-     removed: a sentence naming three places is noise when one smart link
-     already sends each phone to the right one.
-     What Rachel then reported is the other half: "the whatsapp message still
-     shows the web link, not the store links". /get/ does redirect by device,
-     but somebody READING the message sees a web address and cannot tell there
-     is an app behind it. So the smart link stays FIRST - it is still the one
-     that works for everybody, desktop included - and the two store URLs follow
-     it as addresses a person can recognise, tap, or search by name. */
+  /* THIRD AND LAST TIME THROUGH THIS (Rachel, 18 Sep 2026: "the whatsapp
+     messages still have the web link, please remove that from everywhere, i
+     only wnat users to the get the app form teh stores - remove it from
+     everywhere, i thought we already removed that before").
+     THE HISTORY, because the two earlier passes each did half the job. 16 Sep
+     removed the PROSE "App Store, Google Play or web" and left the /get/ link.
+     17 Sep added the two store addresses BEHIND that link, on the report that a
+     reader "sees a web address and cannot tell there is an app at the end of
+     it" - which was true and did not go far enough, because the web address was
+     still the first thing in the message. Now there is no web address at all.
+     /get/ IS STILL DEPLOYED and still routes by device: the Android build is a
+     TWA that loads the web host, and links already sent in other people's chats
+     have to keep working. It is only no longer advertised. */
   check('the prose listing destinations is still gone',
     /App Store, Google Play or web/.test(src), false);
+  check('no message carries the /get/ web address any more',
+    /web\.app\/Tally\/get/.test(src), false);
+  check('and the constant that held it is gone with it',
+    /const GET_TALLY_URL\s*=/.test(src), false);
+  /* SHARE_HOST held the "Open it in Tally" deep link that buildMemberMessage
+     sent to an existing member. Both went: the link was a web address, and the
+     share button no longer starts an invite for anybody. The ?open= HANDLER
+     stays - links already in other people's chats must keep working - so this
+     asserts on the SENT STRING, not on the handler. */
+  check('no message offers to open the ledger on the web',
+    /Open it in Tally:/.test(src), false);
+  check('and the host constant is gone', /const SHARE_HOST\s*=/.test(src), false);
+  check('the deep-link handler is untouched, for links already sent',
+    new RegExp('get\\(' + Q + 'open' + Q + '\\)').test(src), true);
   /* ONE FOOTER, NOT FOUR COPIES OF ONE. The tail used to be the same string
      written out in four places, which is how three of them keep an old link
      when the fourth is fixed. */
   check('the per-tracker footer is built in one place',
-    (src.split('_Get Tally free:_').length - 1), 1);
+    (src.split('_Tracked with Tally').length - 1), 1);
   check('and every summary uses it',
     (src.split('appShareFooter()').length - 1) >= 5, true);
-  /* Spell the QUOTE with Q - terser rewrites every single one as a double. */
-  check('the smart link still leads',
-    new RegExp('Get Tally free:_ ' + Q + '\\+ ?GET_TALLY_URL').test(src), true);
-  check('with the App Store behind it', /APPSTORE_URL/.test(src), true);
-  check('and Google Play', /PLAY_URL/.test(src), true);
+  /* THE APP STORE LINK IS FIRST, AND THAT IS LOAD-BEARING (Rachel, same day:
+     "when the whatsapp message is shared, in prior version, the logo used to
+     appear on top, now when i tried yesterday, the logo doesnt appear
+     anymore"). WhatsApp draws its preview card - the logo at the top of the
+     bubble - from the FIRST url in the text. apps.apple.com serves the app's
+     own icon and name; /get/ never served an og:image at all, which is why the
+     logo came and went. So the order of these two lines is a feature.
+     Spell the QUOTE with Q - terser rewrites every single one as a double. */
+  const footer = extractFn('appShareFooter');
+  check('the footer carries both stores and nothing else',
+    /APPSTORE_URL/.test(footer) && /PLAY_URL/.test(footer), true);
+  check('the App Store comes first, so the preview card is the app',
+    footer.indexOf('APPSTORE_URL') < footer.indexOf('PLAY_URL'), true);
+  check('and no third link can get in front of them',
+    (footer.match(/https?:\/\//g) || []).length, 0);
+  const appMsg0 = extractFn('buildAppShareMessage');
+  check('Tell a friend leads with the App Store too',
+    appMsg0.indexOf('APPSTORE_URL') > -1 &&
+    appMsg0.indexOf('APPSTORE_URL') < appMsg0.indexOf('PLAY_URL'), true);
+  const inviteMsg0 = extractFn('buildInviteMessage');
+  check('and so does the invite',
+    inviteMsg0.indexOf('APPSTORE_URL') > -1 &&
+    inviteMsg0.indexOf('APPSTORE_URL') < inviteMsg0.indexOf('PLAY_URL'), true);
+  check('Tell a friend no longer advertises the browser version',
+    /works in a browser too/.test(appMsg0), false);
   check('no footer still claims one link fits every device',
     /_Get Tally free \(any device\):_/.test(src), false);
   const getPage = fs.readFileSync(path.join(__dirname, '..', 'get', 'index.html'), 'utf8');
   check('the landing page offers Google Play',
     /play\.google\.com\/store\/apps/.test(getPage), true);
   check('the landing page still knows about the App Store', /App Store/.test(getPage), true);
+  /* The PAGE may still mention the web app - it is the fallback for a desktop
+     that has no store to be sent to. What changed is that no MESSAGE links
+     here any more. */
   check('the web app is still reachable from it',
     /tally-app-c82c6\.web\.app\/Tally\//.test(getPage), true);
   check('the landing page routes by device again',
@@ -2668,8 +2741,19 @@ section('Sharing is always an invite, and it says what it is');
     /Get Tally free/.test(src), true);
   check('the invite is shorter: the two-route New\/Already split is gone',
     /New to Tally\?/.test(src), false);
-  check('someone who already joined gets a link, not a fresh code',
-    /\?open=/.test(src), true);
+  /* THIS ASSERTION CAUGHT ITSELF, WHICH IS THE OLDEST TRAP IN THIS PROJECT.
+     It used to read `/\?open=/.test(src) === true`, for the "Open it in Tally"
+     link buildMemberMessage sent to an existing member. That message went on
+     18 Sep 2026 with every other web address - and the test still PASSED on
+     the readable master, because the comment above the deep-link handler
+     contains the characters "?open=". The minifier strips comments, so it
+     failed on the shipped build and only there.
+     MATCH THE CODE, NOT THE PROSE. The handler is what has to survive - links
+     already sitting in other people's chats must keep working - and it survives
+     as a call, which the minifier keeps. */
+  check('the deep-link handler still reads an open= link somebody was sent',
+    new RegExp('get\\(' + Q + 'open' + Q + '\\)').test(src), true);
+  check('but no message builds one any more', /Open it in Tally:/.test(src), false);
   check('the entry screen exists', /Access Your Invites/.test(src), true);
   check('a viewer is told why, not shown a dead button',
     src.indexOf('a viewer') >= 0, true);
@@ -2716,12 +2800,13 @@ section('A viewer cannot share the ledger, and is not left with nothing');
   const appMsg = extractFn('buildAppShareMessage');
   check('the app share exists', appMsg.length > 0, true);
   check('the app share carries no balance', /Current Balance|balance:/i.test(appMsg.replace(/live balance|the balance is/gi, '')), false);
-  /* The invitation still leads with the one link that knows the device; the
-     two store addresses follow it so a reader can see there IS an app. */
-  check('the app share still leads with the smart link',
-    /Get it free/.test(appMsg) && /GET_TALLY_URL/.test(appMsg), true);
-  check('and now names the stores a reader can search for',
-    /APPSTORE_URL/.test(appMsg) && /PLAY_URL/.test(appMsg), true);
+  /* 18 Sep 2026: the smart /get/ link has gone from this message with all the
+     others. Two store addresses, App Store first. */
+  check('the app share offers the download',
+    /Get it free/.test(appMsg), true);
+  check('it names the two stores and nothing else',
+    /APPSTORE_URL/.test(appMsg) && /PLAY_URL/.test(appMsg) &&
+    !/GET_TALLY_URL/.test(appMsg), true);
   check('but still does not list destinations in prose',
     /App Store, Google Play or web/.test(appMsg), false);
   check('Settings offers it to every role', /onclick="shareTallyApp\(\)"/.test(src), true);
@@ -2740,11 +2825,33 @@ section('The owner can promote, demote or revoke a member');
      needed — but the member must never be able to reach this. */
   const sheet = extractFn('showLedgerMembers');
   check('only the owner sees the controls', /isLedgerOwner\(/.test(sheet), true);
-  check('the owner cannot demote themselves here',
-    new RegExp('!isLedgerOwner\\([\\w$]+\\)\\s*\\|\\|\\s*[\\w$]+\\s*===\\s*' + Q + 'owner' + Q).test(sheet), true);
-  check('a promotion is offered to a viewer', /Make editor/.test(sheet), true);
-  check('a demotion is offered to an editor', /Make viewer/.test(sheet), true);
-  check('revoking is still there, and now says so', /Revoke/.test(sheet), true);
+  /* THE OWNER'S ROW IS BUILT SEPARATELY AND CARRIES NO CONTROLS (18 Sep 2026).
+     It used to be one loop over every member with a three-way guard inside it;
+     the owner is now a row of its own above the loop, and the loop runs over
+     everybody except the owner. Handing a ledger over is a different decision
+     with its own flow in the account-deletion path. */
+  check('the owner is a row of its own, and it says You',
+    new RegExp(Q + 'You' + Q).test(sheet) && /role-chip role-owner">Owner/.test(sheet), true);
+  check('and a guest still sees the owner named rather than "You"',
+    /ownerName/.test(sheet), true);
+  check('a member cannot be offered controls over themselves',
+    /isMe/.test(sheet) || /\|\|\s*[\w$]+\)\s*return/.test(sheet), true);
+  /* CAPACITY IN WORDS, NOT ROLE NAMES (Rachel: "their capacity whetrher
+     view-only or edit rights"). "Viewer" and "Editor" are what the code calls
+     them. */
+  check('the capacity is named the way the owner thinks of it',
+    /Edit rights/.test(sheet) && /View only/.test(sheet), true);
+  check('a promotion is offered to a viewer', /Give edit rights/.test(sheet), true);
+  check('a demotion is offered to an editor', /Make view only/.test(sheet), true);
+  check('the dialog and the confirm that follows it use the SAME words',
+    /Give edit rights/.test(extractFn('confirmChangeRole')) &&
+    /Make view only/.test(extractFn('confirmChangeRole')), true);
+  /* CANCEL INVITE, PER INVITEE (Rachel: "cancel invite is better coz its per
+     invitee not for all"). The word "Revoke" is gone from both screens. */
+  check('each invitee can be cancelled individually',
+    /confirmRemoveMember\(/.test(sheet) && /Cancel invite/.test(sheet), true);
+  check('and nothing says "Revoke" any more',
+    /Revoke/.test(sheet) || /Revoke/.test(extractFn('confirmRemoveMember')), false);
   /* The member finds out by themselves: the snapshot handler already re-reads
      the role on every ledger update. If that line ever goes, a demoted editor
      keeps their buttons until they restart the app. */
@@ -3111,21 +3218,113 @@ section('Leaving is not the first thing a guest is offered');
   check('the strip opens the members dialog instead', strip.indexOf('showLedgerMembers') >= 0, true);
   const members = extractFn('showLedgerMembers');
   check('Leave is reachable from the members dialog', members.indexOf('confirmLeaveLedger') >= 0, true);
-  check('and only a non-owner is offered it', /!isLedgerOwner\(p\)\s*\?[\s\S]{0,300}confirmLeaveLedger/.test(members), true);
+  /* `owner` is a local the minifier renames, so match the SHAPE: a negated
+     one-token test, then the button, inside 300 characters. */
+  check('and only a non-owner is offered it',
+    /![\w$]+\s*\?[\s\S]{0,300}confirmLeaveLedger/.test(members), true);
   check('leaving still confirms before it happens', /function confirmLeaveLedger/.test(src), true);
 })();
 
-section('An invite that nobody has accepted is still visible, and only to the owner');
+/* ---- AN INVITE NOBODY HAS ACCEPTED IS NOT SHOWN AT ALL (18 Sep 2026) ----
+   Rachel: "after the code is generated, i dont want to show the user who was
+   invited but did not accept. its not worth it. the user sees nothing until his
+   invitee joins."
+   THE VERSION THIS REPLACES SHOWED IT IN FOUR PLACES - a chip on the home card,
+   a strip across the top of the tracker, a block in this dialog with the live
+   join code printed in it, and a Remind button that resent the same code. All
+   of it was accurate, and all of it was about a state the owner can do nothing
+   useful about: they sent the message, they know they sent it, and no button
+   here makes it get read. These assertions pin the absence, which is the
+   release. */
+section('An invite nobody has accepted is invisible until it is accepted');
 (function () {
   const members = extractFn('showLedgerMembers');
-  check('the members dialog lists outstanding invites', members.indexOf('livePendingInvites') >= 0, true);
-  check('it offers to send the same code again', members.indexOf('resendInvite') >= 0, true);
-  check('it offers to cancel the invite', members.indexOf('confirmRevokeInvite') >= 0, true);
-  check('pending invites are owner-only', new RegExp('isLedgerOwner\\(p\\)\\s*\\?\\s*livePendingInvites').test(members), true);
-  // Resending must not mint a second code — that is the bug below.
-  const resend = extractFn('resendInvite');
-  check('resending reuses the stored code', resend.indexOf('createInviteCode') >= 0, false);
-  check('resending rebuilds the same message', resend.indexOf('buildInviteMessage') >= 0, true);
+  check('the dialog no longer lists outstanding invites',
+    /livePendingInvites/.test(members), false);
+  check('and that function is gone, not merely unused',
+    /function livePendingInvites/.test(src), false);
+  check('no join code is printed on screen', /Code <b>/.test(src), false);
+  /* SCOPED TO THE FUNCTION, NOT THE FILE. The comments above showLedgerMembers
+     say what was removed and name it; the minifier strips comments, so a
+     whole-file search for those words would fail here and pass on the shipped
+     build. extractFn starts at `function`, so the prose is not in `members`. */
+  check('there is no Send again', /Send again/.test(members), false);
+  check('there is no Remind in the dialog', /Remind/.test(members), false);
+  check('and the Remind handler is gone from the app',
+    /function resendInvite/.test(src), false);
+  check('no Stop sharing button in the dialog', /Stop sharing/.test(members), false);
+  check('and its dialog is gone from the app',
+    /function confirmUnshare/.test(src) || /function doUnshare/.test(src), false);
+  const chip = extractFn('roleChipHtml');
+  check('the home card carries no "Invited" badge', /Invited/.test(chip), false);
+  check('it badges an owner only once somebody else is counted',
+    /memberCount/.test(chip) && /Shared/.test(chip), true);
+  const strip = extractFn('sharedStripHtml');
+  check('and an owner gets no strip at all',
+    /isLedgerOwner\(p\)\)?\s*return\s*''|isLedgerOwner\(p\)\)return""/.test(strip) ||
+    new RegExp('isLedgerOwner\\(p\\)\\)\\s*return\\s*' + Q + Q).test(strip), true);
+  check('the guest strip survives, because it tells a guest something new',
+    /Shared by /.test(strip), true);
+  /* THE ONE SIGNAL THE OWNER GETS is the header button's wording, so the line
+     it draws has to be "is somebody in", not "has a code been sent". */
+  const has = extractFn('hasJoinedMembers');
+  check('joined means somebody other than the owner is in members',
+    /memberCount/.test(has), true);
+  check('it does not count a code that was merely sent',
+    /pendingInvites/.test(has), false);
+  check('a member who has since LEFT still counts, or their row is unreachable',
+    /joinedMembers/.test(has), true);
+})();
+
+/* ---- LEFT GROUP (Rachel, 18 Sep 2026) ------------------------------------
+   "if an invitee has joined then left the ledger, the user sees Left Group next
+   to that invitee's name."
+   WHY IT IS THE OWNER'S OWN RECORD AND NOT A FIELD ON THE LEDGER: leaving is
+   `leavingMyself()` in firestore.rules, which allows a member to change only
+   members, memberUids, clientUpdatedAt and updatedAt AND requires their own uid
+   to be absent from the new members map. A leaver therefore cannot write a
+   tombstone anywhere in that document without a rules change published by hand
+   in the console. The owner's ledger listener already sees every membership
+   change, so the owner writes it down locally instead. */
+section('An invitee who joined and left is still named, with Left Group');
+(function () {
+  check('the record is on the never-published list',
+    extractConstLine('const LEDGER_LOCAL_KEYS=').indexOf('joinedMembers') >= 0, true);
+  check('and it travels on the owner\'s own stub, across their devices',
+    /joinedMembers/.test(extractFn('stubOf')), true);
+  check('the snapshot handler is what maintains it',
+    /recordJoinedMembers\(/.test(extractFn('attachLedgerListener')), true);
+  const rec = extractFn('recordJoinedMembers');
+  check('only the owner keeps it', /isLedgerOwner\(/.test(rec), true);
+  check('somebody missing from the live members map is marked left',
+    /left\s*=\s*(!0|true)/.test(rec), true);
+  const members = extractFn('showLedgerMembers');
+  check('the dialog reads it', /joinedMembers/.test(members), true);
+  check('and writes Left Group beside the name', /Left Group/.test(members), true);
+  check('in its own muted chip, not a third kind of access',
+    /role-left/.test(members) && /\.role-left\{/.test(src), true);
+  /* NO BUTTONS ON A LEFT ROW. The literal is one string, so the markup proves
+     the row ends at the chip - there is nothing to cancel and no code to kill. */
+  check('a Left Group row carries no controls',
+    /role-left">Left Group<\/span><\/span><\/div>/.test(members), true);
+  /* BEING SHOWN THE DOOR IS NOT LEAVING. doRemoveMember deletes the row rather
+     than marking it, or the owner's own screen would tell them a lie. */
+  const rm = extractAsyncFn('doRemoveMember');
+  check('cancelling an invite deletes the row instead of marking it left',
+    /delete [\w$]+\.joinedMembers\[/.test(rm), true);
+  /* AND CANCELLING THE LAST ONE IS WHAT STOP SHARING USED TO BE (Rachel: "stop
+     sharing button is not needed, because it can be done by user: cancel
+     invite"). unshareLedger is unchanged, with the four guards added on 17 Sep
+     after an unshare destroyed an activity - so this is a new CALLER, not new
+     deletion code. */
+  check('cancelling the last invitee folds the activity back',
+    /unshareLedger\(/.test(rm), true);
+  check('the confirm says so before it happens',
+    /ordinary activity on your phone/.test(extractFn('confirmRemoveMember')), true);
+  check('and "last one" is asked of the members map, not of memberCount',
+    /_isLastOtherMember\(/.test(rm) && /function _isLastOtherMember/.test(src), true);
+  check('unshareLedger itself still refuses to delete an unloaded ledger',
+    /ledger-not-loaded/.test(extractAsyncFn('unshareLedger')), true);
 })();
 
 section('Resharing supersedes the old code instead of running two');
@@ -3230,10 +3429,11 @@ section('The invite message no longer calls a solo project a debt');
   ];
   const build = (extra, ret) => new Function(...DEPS, FIG + extra + '; return ' + ret + ';')(...stubs);
   const inviteLine = build(extractFn('inviteBalanceLine'), 'inviteBalanceLine');
-  /* buildShareSummaryText ends with the shared footer now, so the sandbox
-     needs it and the three URLs it names. */
+  /* buildShareSummaryText ends with the shared footer, so the sandbox needs it
+     and the URLs it names - TWO of them since 18 Sep 2026, both stores, no web
+     address. */
   const summary    = build(
-    extractConstLine('const GET_TALLY_URL=') + extractConstLine('const APPSTORE_URL=') +
+    extractConstLine('const APPSTORE_URL=') +
     extractConstLine('const PLAY_URL=') + extractFn('appShareFooter') +
     extractFn('buildShareSummaryText'), 'buildShareSummaryText');
   const solo       = build('', 'soloFiguresBlock');
@@ -3306,34 +3506,38 @@ section('The invite message no longer calls a solo project a debt');
     extractFn('buildShareSummaryText').indexOf('Remaining to pay') >= 0, false);
 })();
 
-section('The share footers stop offering the browser');
-/* Rachel, 16 Sep 2026: "remove from the whatsapp message - app store, google
-   play, or web. just stop at get tally free and put the link." The link goes to
-   /get/, which routes by device, so listing the destinations in PROSE was both
-   long and wrong.
-   REVISED 17 Sep 2026, and it is worth being precise about what changed.
-   Rachel: "the whatsapp message still shows the web link, not the store links."
-   Both things are true at once - /get/ really does redirect, AND a person
-   reading the message sees a web address with no sign there is an app behind
-   it. So the prose stays gone, the smart link stays FIRST (it is the only one
-   that works on a desktop), and the two store URLs follow it as addresses a
-   reader can recognise or search by name. */
+section('The share footers offer the two stores and nothing else');
+/* THE THIRD AND LAST PASS AT ONE SENTENCE, and all three are worth keeping
+   because each was a smaller version of the same mistake.
+   16 Sep 2026, Rachel: "remove from the whatsapp message - app store, google
+   play, or web. just stop at get tally free and put the link." The prose went
+   and the /get/ link stayed.
+   17 Sep: "the whatsapp message still shows the web link, not the store links."
+   Both halves were true at once - /get/ really does redirect by device, AND a
+   reader sees a web address with no sign there is an app behind it - so the two
+   store URLs were added BEHIND the smart link.
+   18 Sep: "the whatsapp messages still have the web link, please remove that
+   from everywhere, i only wnat users to the get the app form teh stores... i
+   thought we already removed that before." Adding the stores behind the web
+   address did not remove the web address. There is now no web address in any
+   message at all. */
 (function () {
   check('no message lists the three destinations in prose',
     /App Store, Google Play or web/.test(src), false);
-  /* ONE footer now, not four copies of one string. */
+  /* ONE footer, not four copies of one string. */
   check('the per-tracker footer is written once',
-    (src.match(/_Get Tally free:_/g) || []).length, 1);
+    (src.match(/_Tracked with Tally/g) || []).length, 1);
   check('and every summary calls it',
     (src.match(/appShareFooter\(\)/g) || []).length >= 5, true);
   check('the tell-a-friend line still invites', /Get it free/.test(src), true);
-  /* THE URL IS WRITTEN ONCE AND REFERRED TO BY NAME. It used to appear as a
-     literal in five places, which is how four of them keep an old address when
-     the fifth is changed. */
-  check('the smart link is defined exactly once',
-    (src.match(/Tally\/get\//g) || []).length, 1);
-  check('and every message reaches it through the constant',
-    (src.match(/GET_TALLY_URL/g) || []).length >= 4, true);
+  /* THE WEB ADDRESS IS GONE FROM THE WHOLE FILE, constant and all. The /get/
+     PAGE is still deployed and still routes by device - the Android build is a
+     TWA that loads the web host, and links already sent in other chats must
+     keep working. It is simply never advertised. */
+  check('the smart link appears nowhere in the app',
+    (src.match(/Tally\/get\//g) || []).length, 0);
+  check('and neither does the constant that held it',
+    (src.match(/GET_TALLY_URL\s*=/g) || []).length, 0);
   check('and the stores are named after it',
     /apps\.apple\.com\/app\/id6798780882/.test(src) &&
     /play\.google\.com\/store\/apps\/details\?id=io\.github\.tallytracker\.twa/.test(src), true);
@@ -3397,16 +3601,21 @@ section('/get/ sends a phone to its own store');
    v103 — TWO THINGS RACHEL ASKED FOR ON 16 SEP 2026
    ====================================================================== */
 
-section('The share options look like the rest of the app');
-/* Rachel: "dont make them in black. keep them light in color like the rest of
-   the app." They were .dialog-btn-save, which is the dark --btn-neutral "ink"
-   button meant for the ONE confirming action in a dialog; three of them stacked
-   read as three black slabs. They are a menu, not a confirmation. */
+section('The capacity picker looks like the rest of the app');
+/* Rachel, 16 Sep 2026: "dont make them in black. keep them light in color like
+   the rest of the app." They were .dialog-btn-save, the dark --btn-neutral
+   "ink" button meant for the ONE confirming action in a dialog; stacked, they
+   read as black slabs. They are a menu, not a confirmation.
+   18 SEP 2026: the three-option chooser this was written for is gone - the
+   share button just sends the balance now - so the class belongs to
+   showInviteRolePick, which IS the invite flow the header button opens. The
+   style assertions matter more than before, not less: this is the screen every
+   invite goes through. */
 (function () {
-  const chooser = extractFn('showShareChoice');
-  check('the three options use the light chooser style',
-    (chooser.match(/share-choice-btn/g) || []).length, 3);
-  check('none of them is an ink button', /dialog-btn-save/.test(chooser), false);
+  const chooser = extractFn('showInviteRolePick');
+  check('both capacities use the light chooser style',
+    (chooser.match(/class="share-choice-btn"/g) || []).length, 2);
+  check('neither is an ink button', /dialog-btn-save/.test(chooser), false);
   check('Cancel is still the outlined button', /dialog-btn-cancel/.test(chooser), true);
   /* THE STYLE ITSELF, or the class name would be an empty promise. Card
      background and a border, exactly like the home screen's action buttons —
@@ -3477,12 +3686,27 @@ section('Sections are edited where they are');
   check('which does not hang off the ungrouped header any more',
     /ungrouped-head/.test(render), false);
 
-  /* ---- "Other Activities" is drawn by the SAME function as a real section ----
-     Rachel: "it looks different in terms of formatting, make it look exactly
-     like the other sections". It was 11px with 2px tracking, no chevron and no
-     count, against 13px/1.5px with both. */
+  /* ---- "Other" is drawn by the SAME function as a real section ----
+     Rachel, 17 Sep 2026: "it looks different in terms of formatting, make it
+     look exactly like the other sections". It was 11px with 2px tracking, no
+     chevron and no count, against 13px/1.5px with both. */
   check('one builder draws every section header',
     (render.match(/sectionHeaderHtml\(/g) || []).length, 2);
+  /* ---- THE LABEL IS ONE WORD (Rachel, 18 Sep 2026: 'the section label
+     "Other Activities" make it just "Other"'). The old label named the wrong
+     thing twice over: the block holds projects and lending circles too, and it
+     sat against section names that are one or two words.
+     ASSERTED OVER THE WHOLE FILE, which is only safe because the phrase was
+     taken out of the COMMENTS as well - the minifier strips comments, so a
+     comment still quoting it would fail here and pass on the shipped build. */
+  check('the ungrouped block is labelled just "Other"',
+    new RegExp(Q + 'Other' + Q).test(render), true);
+  check('and the old two-word label is nowhere in the app',
+    /Other Activities/.test(src), false);
+  check('the removal toast uses the same word as the heading',
+    /to Other/.test(extractFn('removeSection')), true);
+  check('someone with no sections at all still sees "Your Activities"',
+    /Your Activities/.test(render), true);
   check('the ungrouped block collapses like the rest',
     /__ungrouped__/.test(render), true);
   check('and carries its count', (render.match(/count:/g) || []).length >= 2, true);
@@ -3514,6 +3738,32 @@ section('Sections are edited where they are');
   /* ---- the first section is still reachable for someone with no sections ---- */
   check('the New Section dialog survives for the empty-state nudge',
     /function openNewGroup/.test(src) && /Create Section/.test(src), true);
+
+  /* ---- "OTHER" IS A ROW IN THE ORDER, NOT A FOOTER (Rachel, 18 Sep 2026) ---
+     "when someone adds a new section, dont let it jump before Other, becaus
+     ethe user will be confused with the jump, the new section should come
+     after Other, the user can then move it up with the arrow."
+     The ungrouped block used to be drawn after EVERY section unconditionally,
+     so a section appended to `groups` appeared above it - a heading the user
+     had just created jumped over the block they were looking at. renderProjects
+     now draws groups.slice(0,cut), then Other, then groups.slice(cut). */
+  check('the sections above Other are drawn first',
+    /groups\.slice\(0,\s*[\w$]+\)/.test(render), true);
+  check('and the ones below it after',
+    /groups\.slice\([\w$]+\)/.test(render), true);
+  check('the boundary is asked for, not assumed',
+    /otherCutIndex\(\)/.test(render), true);
+  /* THE ARROWS FOLLOW THE ROWS, NOT THE ARRAY. `noUp`/`noDown` replaced
+     `first`/`last` because "first in groups" stopped being the same question as
+     "top of the screen": the last section ABOVE Other can still go down (it
+     crosses Other) and the first section BELOW it can still go up even when it
+     is groups[0]. */
+  check('the header is told what it may do, not where it sits',
+    /noUp:/.test(render) && /noDown:/.test(render), true);
+  check('and it no longer reasons about array position itself',
+    /o\.first|o\.last/.test(hdr), false);
+  check('the Other block itself gets no arrows and no bin',
+    /editable:(false|!1)/.test(render), true);
 })();
 
 section('Adding, removing, renaming and undoing a section');
@@ -3548,6 +3798,15 @@ section('Adding, removing, renaming and undoing a section');
       '    esc=D.esc, startRenameSection=D.startRenameSection;' +
       'function getGroup(id){return groups.find(function(g){return g.id===id})}' +
       'function getProject(id){return projects.find(function(p){return p.id===id})}' +
+      /* THE BOUNDARY HELPERS ARE PART OF THE UNIT UNDER TEST (18 Sep 2026).
+         otherCutIndex and homeHasUngrouped are what decide which side of the
+         "Other" block a section renders on, and homeHasUngrouped reads
+         `projects` - which the sandbox already provides, because removeSection
+         has always needed it. They are deliberately written with no free
+         variables for exactly this reason. */
+      extractFn('otherCutIndex') + ';' +
+      extractFn('homeHasUngrouped') + ';' +
+      extractFn('_setSectionBelow') + ';' +
       extractFn('newSectionName') + ';' +
       extractFn('showSectionUndoToast') + ';' +
       extractFn('removeSection') + ';' +
@@ -3562,6 +3821,15 @@ section('Adding, removing, renaming and undoing a section');
       ' moveSectionUp:moveSectionUp, moveSectionDown:moveSectionDown,' +
       ' addSectionAtEnd:addSectionAtEnd,' +
       ' commitRenameSection:commitRenameSection,' +
+      ' cut:otherCutIndex,' +
+      /* WHAT THE HOME SCREEN ACTUALLY DRAWS, in order, with "Other" as a row
+         of its own - which is the whole point of the release. renderProjects
+         walks groups.slice(0,cut), then the Other block if anything is in it,
+         then groups.slice(cut); this is that, and nothing else, so a test can
+         read the screen rather than the flags. */
+      ' rows:function(){var c=otherCutIndex();var r=groups.slice(0,c).map(function(g){return g.name});' +
+      '   if(homeHasUngrouped())r.push("Other");' +
+      '   return r.concat(groups.slice(c).map(function(g){return g.name}))},' +
       ' names:function(){return groups.map(function(g){return g.name})},' +
       ' count:function(){return groups.length},' +
       ' orphans:function(){return projects.filter(function(p){return !p.groupId}).map(function(p){return p.id}).sort()},' +
@@ -3617,8 +3885,8 @@ section('Adding, removing, renaming and undoing a section');
   check('its items are ungrouped, not deleted', d.orphans(), ['p1', 'p2', 'p4']);
   check('nothing else moved', d.members('gB'), ['p3']);
   check('undo is offered', /undoRemoveSection/.test(d.D._toastEl.innerHTML), true);
-  check('and the toast says what moved',
-    /2 items moved to Other Activities/.test(d.D._toastEl.innerHTML), true);
+  check('and the toast says what moved, by the label on screen',
+    /2 items moved to Other/.test(d.D._toastEl.innerHTML), true);
   d.undoRemoveSection();
   check('undo puts it back in the same position', d.names(), ['Work', 'Leisure']);
   check('with the same members', d.members('gA'), ['p1', 'p2']);
@@ -3677,6 +3945,180 @@ section('Adding, removing, renaming and undoing a section');
   check('committing with no field on screen does not throw', threw, 'null');
 })();
 
+/* ======================================================================
+   v108 - A NEW SECTION LANDS UNDER "OTHER", NOT OVER IT
+   ======================================================================
+   Rachel, 18 Sep 2026: "when someone adds a new section, dont let it jump
+   before Other, becaus ethe user will be confused with the jump, the new
+   section should come after Other, the user can then move it up with the
+   arrow."
+
+   THE OLD SHAPE, AND WHY IT COULD NOT BE FIXED BY REORDERING THE ARRAY: the
+   ungrouped block was drawn after every section unconditionally, so "the end of
+   the list" and "the end of `groups`" were two different places and no array
+   position could put a section below Other. Other is a row in the same ordered
+   list now - `g.below` marks the sections under it, `groups` is kept
+   partitioned so the boundary is one index, and the array order still decides
+   the order within each side.
+
+   ALL BEHAVIOURAL, AND READ OFF THE SCREEN. `rows()` is what renderProjects
+   draws, in order, with "Other" in it as a row of its own. Asserting on the
+   flag instead would pass while the screen was wrong - which is precisely the
+   bug being fixed. Every local in these functions is renamed by the minifier,
+   so a textual test could not reach them at all. */
+section('A new section lands under Other, and an arrow brings it up');
+(function () {
+  const build = (state) => {
+    let n = 0;
+    const toast = { innerHTML: '', style: {}, classList: { add() {}, remove() {} } };
+    const D = {
+      document: { getElementById: (id) => (id === 'toast' ? toast : null), querySelector: () => null },
+      db: { saveCollapsedGroups() {} },
+      save() {}, showToast() {}, renderHome() {}, renderProjects() {},
+      genId: () => 'new' + (++n), esc: (s) => String(s),
+      startRenameSection() {}, _toastEl: toast,
+    };
+    const api = new Function('st', 'D',
+      'var groups=st.groups, projects=st.projects, collapsedGroups=st.collapsedGroups||{};' +
+      'var _sectionUndo=null;' +
+      'var document=D.document, db=D.db, save=D.save, showToast=D.showToast,' +
+      '    renderHome=D.renderHome, renderProjects=D.renderProjects, genId=D.genId,' +
+      '    esc=D.esc, startRenameSection=D.startRenameSection;' +
+      'function getGroup(id){return groups.find(function(g){return g.id===id})}' +
+      'function getProject(id){return projects.find(function(p){return p.id===id})}' +
+      extractFn('otherCutIndex') + ';' +
+      extractFn('homeHasUngrouped') + ';' +
+      extractFn('_setSectionBelow') + ';' +
+      extractFn('newSectionName') + ';' +
+      extractFn('showSectionUndoToast') + ';' +
+      extractFn('removeSection') + ';' +
+      extractFn('undoRemoveSection') + ';' +
+      extractFn('moveSection') + ';' +
+      extractFn('moveSectionUp') + ';' +
+      extractFn('moveSectionDown') + ';' +
+      extractFn('addSectionAtEnd') + ';' +
+      'return {addSectionAtEnd:addSectionAtEnd, moveSectionUp:moveSectionUp,' +
+      ' moveSectionDown:moveSectionDown, removeSection:removeSection,' +
+      ' undoRemoveSection:undoRemoveSection, cut:otherCutIndex,' +
+      // WHAT THE HOME SCREEN DRAWS, in order: the sections above Other, the
+      // Other block when anything is in it, then the sections below.
+      ' rows:function(){var c=otherCutIndex();' +
+      '   var r=groups.slice(0,c).map(function(g){return g.name});' +
+      '   if(homeHasUngrouped())r.push("Other");' +
+      '   return r.concat(groups.slice(c).map(function(g){return g.name}))},' +
+      // The invariant everything else rests on: no unflagged section may sit
+      // after a flagged one, or the boundary is not a single index.
+      ' partitioned:function(){var seen=false;for(var i=0;i<groups.length;i++){' +
+      '   if(groups[i].below)seen=true; else if(seen)return false} return true},' +
+      // Which arrows the header would draw, for the section at this index.
+      ' arrows:function(i){var c=otherCutIndex(),o=homeHasUngrouped();' +
+      '   return {up:(i>0||(o&&i===c)),down:(i<groups.length-1||(o&&i===c-1))}}}'
+    )(state, D);
+    return api;
+  };
+  // Two sections, one loose activity - so the Other block is on screen.
+  const loose = () => ({ groups: [{ id: 'gA', name: 'Work' }, { id: 'gB', name: 'Leisure' }],
+                         projects: [{ id: 'p1', groupId: 'gA' }, { id: 'p4', groupId: null }] });
+  // Everything filed, so there is no Other block to cross.
+  const tidy  = () => ({ groups: [{ id: 'gA', name: 'Work' }, { id: 'gB', name: 'Leisure' }],
+                         projects: [{ id: 'p1', groupId: 'gA' }, { id: 'p3', groupId: 'gB' }] });
+
+  /* ---- THE BUG, AND ITS FIX ---- */
+  const a = build(loose());
+  check('before: Other is the last row', a.rows(), ['Work', 'Leisure', 'Other']);
+  a.addSectionAtEnd();
+  check('a new section lands UNDER Other, not over it',
+    a.rows(), ['Work', 'Leisure', 'Other', 'New section']);
+  check('and the array is still partitioned', a.partitioned(), true);
+  /* ---- AND THE ARROW BRINGS IT UP, ONE ROW AT A TIME ---- */
+  a.moveSectionUp('new1');
+  check('up moves it past Other and nothing else',
+    a.rows(), ['Work', 'Leisure', 'New section', 'Other']);
+  a.moveSectionUp('new1');
+  check('up again moves it past one section',
+    a.rows(), ['Work', 'New section', 'Leisure', 'Other']);
+  check('still partitioned', a.partitioned(), true);
+  /* ---- AND DOWN GOES BACK THE SAME WAY, ONE ROW PER PRESS ---- */
+  a.moveSectionDown('new1');
+  check('down swaps with the section below',
+    a.rows(), ['Work', 'Leisure', 'New section', 'Other']);
+  a.moveSectionDown('new1');
+  check('down again crosses Other',
+    a.rows(), ['Work', 'Leisure', 'Other', 'New section']);
+  a.moveSectionDown('new1');
+  check('and down from the bottom row does nothing',
+    a.rows(), ['Work', 'Leisure', 'Other', 'New section']);
+  check('partitioned throughout', a.partitioned(), true);
+
+  /* ---- CROSSING MOVES ONE SECTION, NOT TWO. A swap at the boundary would
+     have carried the section BELOW Other up over it at the same time, which
+     is two rows moving for one press. ---- */
+  const b = build(loose());
+  b.addSectionAtEnd();                  // Work, Leisure, Other, New section
+  b.moveSectionDown('gB');              // Leisure crosses Other downward
+  check('the section that crossed keeps its place among the sections',
+    b.rows(), ['Work', 'Other', 'Leisure', 'New section']);
+  check('and still partitioned', b.partitioned(), true);
+
+  /* ---- A SECTION BELOW OTHER CAN GO UP EVEN WHEN IT IS groups[0] ----
+     This is why `first`/`last` had to become `noUp`/`noDown`: with every
+     section below Other, groups[0] is the row directly under the Other block
+     and its up arrow is the only way back. ---- */
+  const c = build(loose());
+  c.moveSectionDown('gA'); c.moveSectionDown('gA');   // Work to the bottom, below Other
+  c.moveSectionDown('gB');                            // Leisure below Other too
+  check('every section can end up below Other', c.rows(), ['Other', 'Leisure', 'Work']);
+  check('groups[0] is then the first row under Other, and may go up',
+    c.arrows(0).up, true);
+  c.moveSectionUp('gB');
+  check('and up brings it back above', c.rows(), ['Leisure', 'Other', 'Work']);
+
+  /* ---- WITH NOTHING LOOSE THERE IS NO OTHER BLOCK, so there is no boundary
+     to cross and the arrows are plain swaps. A flag flip here would have been
+     a press that changed nothing on screen. ---- */
+  const d = build(tidy());
+  check('no Other row when everything is filed', d.rows(), ['Work', 'Leisure']);
+  d.addSectionAtEnd();
+  check('a new section is simply last', d.rows(), ['Work', 'Leisure', 'New section']);
+  check('and no flag was needed', d.cut(), 3);
+  d.moveSectionUp('new1');
+  check('up is an ordinary swap', d.rows(), ['Work', 'New section', 'Leisure']);
+  check('and the arrays stays partitioned', d.partitioned(), true);
+  check('the top row cannot go up', d.arrows(0).up, false);
+  check('and the bottom row cannot go down', d.arrows(2).down, false);
+
+  /* ---- AN ACCOUNT THAT HAS NEVER ADDED A SECTION SINCE THIS SHIPPED has no
+     flags at all, so every section is above Other exactly as before. That is
+     the whole migration. ---- */
+  const e = build(loose());
+  check('no flags means the boundary is the end of the list', e.cut(), 2);
+  check('and Other is drawn last, as it always was',
+    e.rows(), ['Work', 'Leisure', 'Other']);
+
+  /* ---- WHICH SIDE IT WAS ON IS PART OF WHERE IT WAS. Undo that put a section
+     back at its old index but above Other would have moved the thing it claims
+     to have restored. ---- */
+  const f = build(loose());
+  f.addSectionAtEnd();
+  check('set up: the new section is below Other',
+    f.rows(), ['Work', 'Leisure', 'Other', 'New section']);
+  f.removeSection('new1');
+  check('removed', f.rows(), ['Work', 'Leisure', 'Other']);
+  f.undoRemoveSection();
+  check('undo puts it back BELOW Other, where it was',
+    f.rows(), ['Work', 'Leisure', 'Other', 'New section']);
+  check('and partitioned after the undo', f.partitioned(), true);
+
+  /* ---- THE ARROW THAT WOULD DO NOTHING IS STILL DISABLED, and the last
+     section ABOVE Other keeps its down arrow because it has Other to cross. */
+  const g2 = build(loose());
+  check('the top section cannot go up', g2.arrows(0).up, false);
+  check('but the last section above Other CAN go down', g2.arrows(1).down, true);
+  g2.moveSectionDown('gB');
+  check('once below, the last row cannot go down', g2.arrows(1).down, false);
+  check('and it can come back up', g2.arrows(1).up, true);
+})();
+
 // Node runs this file top-to-bottom, so collect the async unshare results too.
 const _unshareChecks = [];
 
@@ -3727,7 +4169,13 @@ section('Stop sharing keeps the activity (17 Sep 2026)');
     extractFn('binProject'),
     extractAsyncFn('unshareLedger'),
     extractFn('isDormantLedger'),
-    extractFn('invitesOutNobodyJoined'),
+    /* invitesOutNobodyJoined was here until 18 Sep 2026. hasJoinedMembers is
+       the predicate that replaced it, and it draws a different line: not "is a
+       code outstanding" but "is anybody actually in", which is the only thing
+       the owner is now shown. It needs sharingUnlocked, which is stubbed above
+       the extractions. */
+    'function sharingUnlocked(){return true}',
+    extractFn('hasJoinedMembers'),
     extractFn('onLedgerGone'),
     'return {get projects(){return projects},set projects(v){projects=v},',
     ' _lgBase:_lgBase,_lgLoaded:_lgLoaded,_lgUnsub:_lgUnsub,_lgMeta:_lgMeta,',
@@ -3737,7 +4185,7 @@ section('Stop sharing keeps the activity (17 Sep 2026)');
     ' set currentProjectId(v){currentProjectId=v},',
     ' set firestore(v){firestore=v},',
     ' unshareLedger:unshareLedger,onLedgerGone:onLedgerGone,',
-    ' isDormantLedger:isDormantLedger,invitesOutNobodyJoined:invitesOutNobodyJoined,',
+    ' isDormantLedger:isDormantLedger,hasJoinedMembers:hasJoinedMembers,',
     ' isShared:isShared};'
   ].join('\n');
 
@@ -3803,8 +4251,9 @@ section('Stop sharing keeps the activity (17 Sep 2026)');
        list without it is what made 17 Sep unrecoverable. */
     check('every saved copy of the list still names it',
       A.persists.length > 0 && A.persists.every(function (names) { return names.indexOf('Living Home Decor') > -1; }), true);
-    /* unshareLedger itself is silent; doUnshare is what speaks. Checked
-       below against its source rather than faked here. */
+    /* unshareLedger itself is silent; its CALLER is what speaks. Since 18 Sep
+       2026 that caller is doRemoveMember, cancelling the last invitee -
+       checked below against its source rather than faked here. */
   });
 
   /* ---- an unshare that never reaches the server changes nothing ---- */
@@ -3901,28 +4350,33 @@ section('Stop sharing keeps the activity (17 Sep 2026)');
     G.isDormantLedger({ shared: true, ledgerId: 'lg_1', role: 'viewer', memberCount: 1 }), false);
   check('an unshared activity is not dormant either', G.isDormantLedger({ id: 'x' }), false);
 
-  /* INVITED IS NOT JOINED (Rachel, 17 Sep 2026). A code that has been sent and
-     not yet redeemed is a THIRD state. It is not dormant — something really is
-     outstanding — but it is not "shared" either, and the first pass let it
-     fall through to the "Shared with 0 people" strip. Sharing begins when
-     somebody is in members, not when a code is minted. */
+  /* INVITED IS NOT JOINED (Rachel, 17 Sep 2026), AND AS OF 18 SEP IT IS ALSO
+     NOT DISPLAYED. A sent code is still a THIRD state and isDormantLedger
+     still counts it - that question is "did this account ever mean to share
+     at all". What went is the display of it, so the predicate the OWNER'S
+     SCREEN asks is now hasJoinedMembers, and it must answer "is somebody in",
+     never "was a code sent". These are behavioural: every local in there is
+     renamed by the minifier. */
   const live = t => ({ shared: true, ledgerId: 'lg_1', role: 'owner', memberCount: 1,
                        pendingInvites: [{ code: 'AB12', participant: t || null, expiresAt: Date.now() + 86400000 }] });
   check('a sent invite is not dormant', G.isDormantLedger(live('Sabine')), false);
-  check('but it is not shared either — nobody has joined',
-    G.invitesOutNobodyJoined(live('Sabine')), true);
-  check('once somebody joins it is no longer merely invited',
-    G.invitesOutNobodyJoined({ shared: true, ledgerId: 'lg_1', role: 'owner', memberCount: 2,
-                               pendingInvites: [{ code: 'AB12', expiresAt: Date.now() + 86400000 }] }), false);
-  check('an expired code is not an invite out', G.invitesOutNobodyJoined(
-    { shared: true, ledgerId: 'lg_1', role: 'owner', memberCount: 1,
-      pendingInvites: [{ code: 'AB12', expiresAt: 1 }] }), false);
-  check('and neither is no code at all',
-    G.invitesOutNobodyJoined({ shared: true, ledgerId: 'lg_1', role: 'owner', memberCount: 1 }), false);
-  check('a guest never has invites out — minting is the owner\'s alone',
-    G.invitesOutNobodyJoined(live('Sabine')) && G.invitesOutNobodyJoined(
-      { shared: true, ledgerId: 'lg_1', role: 'viewer', memberCount: 1,
-        pendingInvites: [{ code: 'AB12', expiresAt: Date.now() + 86400000 }] }), false);
+  check('but a sent invite is NOT somebody having joined',
+    G.hasJoinedMembers(live('Sabine')), false);
+  check('a second member is', G.hasJoinedMembers(
+    { shared: true, ledgerId: 'lg_1', role: 'owner', memberCount: 2 }), true);
+  check('an owner alone with no code at all is not',
+    G.hasJoinedMembers({ shared: true, ledgerId: 'lg_1', role: 'owner', memberCount: 1 }), false);
+  /* AND THE ONE THAT KEEPS THE "Left Group" ROW REACHABLE: somebody who joined
+     and walked out leaves memberCount back at 1, so without this the button
+     would go back to reading "Invite" and take the only door to their row with
+     it. */
+  check('but somebody who joined and left still counts',
+    G.hasJoinedMembers({ shared: true, ledgerId: 'lg_1', role: 'owner', memberCount: 1,
+                         joinedMembers: { u_sabine: { name: 'Sabine', role: 'viewer', left: true } } }), true);
+  check('a guest is never offered the owner\'s button',
+    G.hasJoinedMembers({ shared: true, ledgerId: 'lg_1', role: 'viewer', memberCount: 2 }), false);
+  check('and an unshared activity has nobody in it to manage',
+    G.hasJoinedMembers({ id: 'x' }), false);
 
   _unshareChecks.push(done, doneB, doneC, doneF);
 
@@ -3941,48 +4395,37 @@ section('Stop sharing keeps the activity (17 Sep 2026)');
      tests above are no longer testing the path the app actually takes. */
   check('a vanished ledger still routes through onLedgerGone',
     /!\s*[\w$]+\.exists\s*\)\s*\{\s*onLedgerGone\(/.test(extractFn('attachLedgerListener')), true);
-  /* The dialog that talked the user through the door. */
-  const du = extractAsyncFn('doUnshare');
-  check('the toast after unsharing says the history came with it', /history/i.test(du), true);
-  check('a refused unshare says nothing was changed', /nothing was changed/i.test(du), true);
-  check('and the still-loading case gets its own message', /ledger-not-loaded/.test(du), true);
-  const cu = extractFn('confirmUnshare');
-  check('the confirm dialog still promises the history stays', /history stays with you/.test(cu), true);
-  check('and says something truer when nothing was ever shared', /isDormantLedger\(/.test(cu), true);
+  /* WHO SPEAKS FOR unshareLedger NOW. "Stop sharing" and its dialog went on
+     18 Sep 2026 - it did to everybody what Cancel invite does to one person,
+     and two buttons for one outcome is how somebody reaches for the blunt one.
+     The FUNCTION is untouched, with all four of the 17 Sep guards; what changed
+     is who calls it. Cancelling the last invitee does, which is what makes
+     Rachel's "it can be done by user: cancel invite" true rather than a hope.
+     THIS BLOCK IS THE RECEIPT FOR THAT: if the last caller is ever removed as
+     well, unshareLedger becomes unreachable and an activity that was shared
+     once can never be folded back - and no test above would notice. */
+  check('the Stop sharing dialog is gone', /function confirmUnshare/.test(src), false);
+  check('and its handler with it', /function doUnshare/.test(src), false);
+  const dr = extractAsyncFn('doRemoveMember');
+  check('unshareLedger is still reached, from cancelling the last invitee',
+    /unshareLedger\(/.test(dr), true);
+  check('the toast says the history came with it', /history/i.test(dr), true);
+  check('a refused fold-back still reports the cancellation',
+    /Invite cancelled/.test(dr), true);
+  check('and the cancellation is written up before the fold-back is tried',
+    dr.indexOf('removeLedgerMember') < dr.indexOf('unshareLedger'), true);
+  check('cancelling somebody who is NOT the last changes nothing else',
+    /_isLastOtherMember\(/.test(dr), true);
   const strip = extractFn('sharedStripHtml');
-  check('a "Shared with 0 people" strip is no longer drawn',
-    /Not shared with anyone yet/.test(strip), true);
-  /* THE WHOLE POINT OF NAMING SABINE: the next tap is a nudge, not a new code.
-     A second trip through Invite someone mints a fresh code and revokes the
-     first, leaving whoever is holding it with something that no longer works. */
-  check('an invite that is out names the person it went to',
-    /Invite sent/.test(strip), true);
-  check('and says they have not joined', /not joined yet/.test(strip), true);
-  check('and offers the SAME code again, not a new one',
-    /resendInvite\(/.test(strip), true);
-  check('it does not offer to mint another from that strip',
-    /Invite sent[\s\S]{0,200}?startInviteFlow\(/.test(strip), false);
-  check('an invite still out is not hidden once somebody has joined',
-    /invites? out/.test(strip), true);
-  /* REMIND IS THE DEFAULT, NOT THE ONLY DOOR. The members dialog is reachable
-     from nowhere else in the app, so dropping Manage from this strip made
-     Cancel invite, Send again and Invite someone unreachable for precisely the
-     activity that had an invite outstanding. Waiting needs no button; the
-     other two each keep one. */
-  check('an invited activity can still reach the members dialog',
-    /Invite sent[\s\S]{0,400}?showLedgerMembers\(/.test(strip), true);
-  check('and the members dialog is still where a code is cancelled',
-    /confirmRevokeInvite\(/.test(extractFn('showLedgerMembers')), true);
-  check('and where the same code is sent again',
-    /resendInvite\(/.test(extractFn('showLedgerMembers')), true);
+  check('an owner is shown no strip at all',
+    new RegExp('isLedgerOwner\\(p\\)\\)\\s*return\\s*' + Q + Q).test(strip), true);
+  check('a "Shared with 0 people" strip is not drawn',
+    /Not shared with anyone yet/.test(strip), false);
+  check('nor a strip about an invite nobody has accepted',
+    /not joined yet/.test(strip), false);
   const chip = extractFn('roleChipHtml');
   check('and no badge is shown for a ledger nobody is in',
     /isDormantLedger\(/.test(chip), true);
-  check('the home card says Invited, not "Shared - 1", until somebody joins',
-    /Invited/.test(chip), true);
-  const cu2 = extractFn('confirmUnshare');
-  check('and Stop sharing says nobody has joined rather than naming nobody',
-    /Nobody has joined yet/.test(cu2), true);
 })();
 
 
