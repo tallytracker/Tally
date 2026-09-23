@@ -2493,12 +2493,15 @@ section('Every message sends people to a store, never to the web');
 /* ---- Creation forms are compact (3 Sep 2026) ---- */
 section('New Activity / New Project forms pair short fields');
 (function () {
-  check('a two-column form row exists', /class="form-row"/.test(src), true);
-  check('short controls sit on their label line', /class="form-group inline"/.test(src), true);
-  check('billing type and currency share one row',
-    /form-row[\s\S]{0,800}id="fType"[\s\S]{0,800}id="fCurrency"/.test(src), true);
-  check('the project currency picker is inline',
-    /form-group inline"[^>]*id="pfSingleCurGroup"/.test(src), true);
+  /* v113 (Rachel, 23 Sep): every row is label-left, field-right (.frow), so the form looks short. */
+  check('rows put the label beside the field', /\.form-group\.frow\{display:flex/.test(src), true);
+  check('billing type and currency each get a row',
+    /class="form-group frow">\s*<label class="form-label">Billing type<\/label>\s*<select class="form-select" id="fType"/.test(src) &&
+    /class="form-group frow">\s*<label class="form-label">Currency<\/label>\s*<select class="form-select" id="fCurrency"/.test(src), true);
+  check('the project currency picker is a row too',
+    /form-group frow"[^>]*id="pfSingleCurGroup"/.test(src), true);
+  check('the week starts on Monday', /\[1,2,3,4,5,6,0\]\.map/.test(extractFn('renderDayChips')), true);
+  check('Note is not marked optional', /Note <span/.test(src), false);
 })();
 
 
