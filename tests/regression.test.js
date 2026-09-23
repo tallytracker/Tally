@@ -2026,7 +2026,8 @@ section('Project action buttons are instructions, not statements');
    and the split then came out wrong. */
 section('Who to list as a participant');
 (function () {
-  check('the project form says sharing the cost', /sharing the cost<\/b>/.test(src), true);
+  /* v114 (Rachel, 23 Sep): the hint went; the label alone asks the question. */
+  check('the extra hint is gone', /sharing the cost<\/b>/.test(src), false);
   // 16 Sep 2026, Rachel: the second sentence went. "no need for it" - the
   // first sentence is the whole instruction. This assertion is INVERTED on
   // purpose rather than deleted, so the sentence cannot quietly come back.
@@ -2135,6 +2136,10 @@ section('Invite is a header button next to Edit and Remove');
     check(pre + ': Invite comes before Edit, which comes before Remove',
       i > -1 && e > i && r > e, true);
   });
+  /* v114 (Rachel, 23 Sep): a user read "Remove" as removing an invitee. */
+  check('the tracker header says Delete, not Remove',
+    (src.match(/onclick="archiveCurrentProject\(\)">Delete</g) || []).length === 3 &&
+    !/onclick="archiveCurrentProject\(\)">Remove</.test(src), true);
   const lock = extractFn('applyRoleLockdown');
   check('all three invite buttons are driven from one place',
     /projInviteBtn/.test(lock) && /detailInviteBtn/.test(lock) && /lendInviteBtn/.test(lock), true);
@@ -2725,11 +2730,16 @@ section('Sharing is always an invite, and it says what it is');
   /* Rachel's copy, 9 Sep 2026. The message is matched on its LITERAL strings
      rather than on any function name, because the minifier renames names and
      leaves string literals alone — the lesson three v90 tests learned. */
+  /* v114 (Rachel, 23 Sep): short and code-first; a tester almost missed the code. */
   check('the message opens as a person, not a notification',
-    /using Tally – The Simple Balance Tracker to track our balance for/.test(src), true);
+    /invited you to /.test(extractFn('buildInviteMessage')), true);
+  check('the invite carries no figures now',
+    /inviteGroupBlock|inviteBalanceLine|inviteActivityLine/.test(extractFn('buildInviteMessage')), false);
+  check('the code comes before the store links',
+    extractFn('buildInviteMessage').indexOf('join code') < extractFn('buildInviteMessage').indexOf('PLAY_URL'), true);
   check('the message carries the balance, labelled', /📌 Current Balance: /.test(src), true);
   check('the balance is stamped as of today', /as of today\./.test(src), true);
-  check('the message carries a join code', /Join Code: \*/.test(src), true);
+  check('the message carries a join code', /Use the following join code: \*/.test(src), true);
   /* QUOTES ARE NOT PART OF THE CODE. terser rewrites every single-quoted
      string as double-quoted, so a check that spells the quote passes on the
      master and fails on the shipped file — which is the whole point of running
@@ -2744,7 +2754,7 @@ section('Sharing is always an invite, and it says what it is');
   check('the invite no longer promises autofill it cannot deliver',
     /Tap here to auto-fill your code/.test(src), false);
   check('the message tells a new user where to type the code',
-    /at the bottom of the home screen and enter the code/.test(src), true);
+    /on the home screen and enter the code/.test(src), true);
   check('the message still points a new user at the download',
     /Get Tally free/.test(src), true);
   check('the invite is shorter: the two-route New\/Already split is gone',
@@ -3632,7 +3642,7 @@ section('The participants hint is one sentence');
 /* Rachel, 16 Sep 2026: the second sentence went. The first one is the whole
    instruction; the second was explaining a joke. */
 (function () {
-  check('the instruction stays', /Only the people <b>sharing the cost<\/b> — including yourself\./.test(src), true);
+  check('the hint is gone (v114, Rachel)', /Only the people <b>sharing the cost<\/b>/.test(src), false);
   check('the lecture goes', /came along/.test(src), false);
 })();
 
