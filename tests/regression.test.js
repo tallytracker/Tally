@@ -2609,10 +2609,11 @@ var SH = (function () {
     extractFn('_slotKey'),
     extractFn('ownerParticipantSlot'),
     extractFn('openParticipantSlots'),
+    extractFn('invitableSlots'),
     'return {_flipView,isPay,otherName,payerName,receiverName,paidBtnLabel,balLabel,reconcileLedgerHistory,' +
     'isShared,ledgerRole,canEditLedger,isLedgerOwner,canAdminLedger,ledgerDataOf,stubOf,' +
     'canWriteEntries,requireEditRights,entryRowAttrs,__setMeta,__setName,' +
-    'ownerParticipantSlot,openParticipantSlots,' +
+    'ownerParticipantSlot,openParticipantSlots,invitableSlots,' +
     'normalizeJoinCode,isWellFormedCode,mergeProjectPair};'
   ].join('\n');
   return new Function('settings', 'cur', 'rd2', on)({ name: 'Mike' }, function () { return '$'; }, function (n) { return n; });
@@ -3039,13 +3040,36 @@ section('Every participant slot is accounted for, including the owner\'s');
      members themselves — counting members is what each of them used to do. */
   const sheet = extractFn('showLedgerMembers');
   check('the members sheet asks before offering Invite someone',
-    /openParticipantSlots\(/.test(sheet), true);
+    /invitableSlots\(/.test(sheet), true);
   check('and says so plainly when there is nobody left',
-    /has joined or been invited/.test(sheet), true);
+    /has joined\./.test(sheet), true);
   check('the invite flow guards the same way behind the hidden button',
-    /openParticipantSlots\(/.test(extractFn('startInviteFlow')), true);
+    /invitableSlots\(/.test(extractFn('startInviteFlow')), true);
   check('the participant picker marks an invited name differently from a joined one',
-    /invited, waiting/.test(extractFn('showInviteParticipantPick')), true);
+    /send a new code/.test(extractFn('showInviteParticipantPick')), true);
+
+  /* 23 Sep 2026: "what if their code has expired and i need to issue a new
+     code?" A code still out must not lock the name: re-inviting replaces it. */
+  SH.__setMeta('L9', members(['Rachel']));
+  SH.__setName('Rachel');
+  check('A name with a code still out can be invited again',
+    SH.invitableSlots(P(['Rachel', 'Sabine', 'Diana'],
+      [{ code: 'AAA111', participant: 'Sabine', expiresAt: FUTURE }])).join(','), 'Sabine,Diana');
+  SH.__setMeta('L9', members(['Rachel', 'Sabine']));
+  check('but a name that has joined cannot',
+    SH.invitableSlots(P(['Rachel', 'Sabine', 'Diana'])).join(','), 'Diana');
+  SH.__setMeta('L9', { members: {} });
+  check('and neither can your own',
+    SH.invitableSlots(P(['Rachel', 'Sabine'])).join(','), 'Sabine');
+  check('a group with no named participants is never full',
+    SH.invitableSlots(P([])), null);
+  SH.__setName('Mike');
+  check('a waiting name in the picker is tappable and says a new code replaces the old',
+    / · send a new code["']/.test(extractFn('showInviteParticipantPick')), true);
+  check('re-inviting a name kills the code it was sent before',
+    /revokeInviteCode\(/.test(extractFn('doCreateInvite')), true);
+  check('no screen says "or been invited" any more',
+    /or been invited/.test(src), false);
   check('the owner is bound to their slot at the moment the group is shared',
     /ownerParticipantSlot\(/.test(extractFn('ensureLedger')), true);
 })();
