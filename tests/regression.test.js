@@ -2360,14 +2360,16 @@ section('The orange settlement line can be deleted from the history log');
    up, and again in the notification that arrives. */
 section('Reminder copy says it is a nudge to log, not to attend');
 (function () {
+  /* v113: the callout became the label itself - a question, not a paragraph. */
   check('the activity form spells it out where the reminder is set up',
-    /reminds you to LOG the session/.test(src) && /never tells you to go/.test(src), true);
+    /Which days should we remind you to log a session\?/.test(src) && /What time should we remind you\?/.test(src), true);
+  check('and the long callout is gone', /never tells you to go/.test(src), false);
   check('the vague old hint is gone',
     /The app will prompt you on those days\./.test(src), false);
   check('the save-time nudge says log or skip',
     /to log the session or mark it skipped/.test(src), true);
   check('the home banner asks for a record, not attendance',
-    /sessions to log/.test(src) && /Not a nudge to attend/.test(src), true);
+    /sessions to log/.test(src), true);
   check('settings says the same thing',
     /a reminder to record, not a reminder to attend/.test(src), true);
 
@@ -3785,8 +3787,8 @@ section('Sections are edited where they are');
     /Other Activities/.test(src), false);
   check('the removal toast uses the same word as the heading',
     /to Other/.test(extractFn('removeSection')), true);
-  check('someone with no sections at all still sees "Your Activities"',
-    /Your Activities/.test(render), true);
+  check('someone with no sections at all still sees "Your trackers"',
+    /Your trackers/.test(render), true);
   check('the ungrouped block collapses like the rest',
     /__ungrouped__/.test(render), true);
   check('and carries its count', (render.match(/count:/g) || []).length >= 2, true);
@@ -3799,10 +3801,11 @@ section('Sections are edited where they are');
   /* TALL AND NARROW, revised the same day: 38px square pushed the label away
      from the control that collapses it. Rachel: "give the arrow more height so
      its visible, and bring the label close to it". */
-  check('and it is tall enough to see and hit',
-    /\.group-chevron\{width:24px;height:34px/.test(src), true);
-  check('with the glyph itself enlarged', /\.group-chevron i\{font-size:26px/.test(src), true);
-  check('and the label right beside it', /\.group-header-left\{[^}]*gap:2px/.test(src), true);
+  /* v113 (Rachel, 23 Sep): a filled 30px accent circle with an SVG arrow, so it reads as "opens". */
+  check('and it is big enough to see and hit',
+    /\.group-chevron\{width:30px;height:30px/.test(src), true);
+  check('drawn as a filled circle in the accent colour', /\.group-chevron\{[^}]*background:var\(--accent-light\)[^}]*color:var\(--accent\)/.test(src), true);
+  check('with the arrow drawn, not typed', /CHEV_SVG/.test(hdr), true);
   check('the rotation is on an inner span so the hit area does not rotate',
     /\.group-chevron i\{/.test(src) && /\.group-chevron\.open i\{transform:rotate\(90deg\)\}/.test(src), true);
 
