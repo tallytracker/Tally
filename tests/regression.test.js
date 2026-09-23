@@ -2457,18 +2457,20 @@ section('Every message sends people to a store, never to the web');
   const footer = extractFn('appShareFooter');
   check('the footer carries both stores and nothing else',
     /APPSTORE_URL/.test(footer) && /PLAY_URL/.test(footer), true);
-  check('the App Store comes first, so the preview card is the app',
-    footer.indexOf('APPSTORE_URL') < footer.indexOf('PLAY_URL'), true);
+  /* 23 Sep 2026: PLAY FIRST. Apple's card says "by <seller>" and the seller
+     is Rachel's own name; Play's card names AppBerry Studio. */
+  check('Google Play comes first, so the preview card has the logo and not a personal name',
+    footer.indexOf('PLAY_URL') > -1 && footer.indexOf('PLAY_URL') < footer.indexOf('APPSTORE_URL'), true);
   check('and no third link can get in front of them',
     (footer.match(/https?:\/\//g) || []).length, 0);
   const appMsg0 = extractFn('buildAppShareMessage');
-  check('Tell a friend leads with the App Store too',
-    appMsg0.indexOf('APPSTORE_URL') > -1 &&
-    appMsg0.indexOf('APPSTORE_URL') < appMsg0.indexOf('PLAY_URL'), true);
+  check('Tell a friend leads with Google Play too',
+    appMsg0.indexOf('PLAY_URL') > -1 &&
+    appMsg0.indexOf('PLAY_URL') < appMsg0.indexOf('APPSTORE_URL'), true);
   const inviteMsg0 = extractFn('buildInviteMessage');
   check('and so does the invite',
-    inviteMsg0.indexOf('APPSTORE_URL') > -1 &&
-    inviteMsg0.indexOf('APPSTORE_URL') < inviteMsg0.indexOf('PLAY_URL'), true);
+    inviteMsg0.indexOf('PLAY_URL') > -1 &&
+    inviteMsg0.indexOf('PLAY_URL') < inviteMsg0.indexOf('APPSTORE_URL'), true);
   check('Tell a friend no longer advertises the browser version',
     /works in a browser too/.test(appMsg0), false);
   check('no footer still claims one link fits every device',
@@ -3010,6 +3012,28 @@ section('Every participant slot is accounted for, including the owner\'s');
   check('a member joined under different capitals still fills the slot',
     SH.openParticipantSlots(Object.assign(P(['Rachel', 'sabine', 'Diana']), {})).join(','),
     'sabine,Diana');
+
+  /* 23 Sep 2026: "a user shouldnt be able to invite himself". Before the
+     group is shared there are no members, so only the recorded slot keeps the
+     owner's own name out of the invite list. */
+  SH.__setMeta('L9', { members: {} });
+  SH.__setName('Rachel');
+  check('before sharing, your own name is not offered for an invite',
+    SH.openParticipantSlots(P(['Rachel', 'Sabine'])).join(','), 'Sabine');
+  SH.__setName('Rachel Sawan');
+  check('a recorded slot works when the list spells you differently',
+    SH.openParticipantSlots(Object.assign(P(['Me', 'Sabine']), { ownerSlot: 'me' })).join(','), 'Sabine');
+  check('and it returns the list\'s spelling',
+    SH.ownerParticipantSlot({ participants: ['Me', 'Sabine'], ownerSlot: 'me' }), 'Me');
+  check('"I\'m not one of them" claims no slot, even on a name match',
+    SH.ownerParticipantSlot({ participants: ['Rachel Sawan', 'Sabine'], ownerSlotNone: true }), '');
+  SH.__setName('Mike');
+  check('the picker asks which one is you when it cannot tell',
+    /showWhichIsYou\(/.test(extractFn('showInviteParticipantPick')), true);
+  check('a new group starts with you in it',
+    /pfParticipants=settings\.name\?\[settings\.name\]/.test(extractFn('openNewProjectForm')), true);
+  check('and so does a new lending circle',
+    /lfParticipants=settings\.name\?\[settings\.name\]/.test(extractFn('openNewLendingCircle')), true);
 
   /* And the screens that ask the question. Both must ASK it rather than count
      members themselves — counting members is what each of them used to do. */
@@ -4142,7 +4166,7 @@ const _unshareChecks = [];
 section('Stop sharing keeps the activity (17 Sep 2026)');
 (function () {
   const UNSHARE_SRC = [
-    'var _lgBase={},_lgUnsub={},_lgLoaded={},_lgMeta={},_unsharing={};',
+    'var _lgBase={},_lgUnsub={},_lgLoaded={},_lgMeta={},_unsharing={},_syncHold=0,_events=[],_writeOK=true,_holdSeen=[];',
     'var projects=[],currentProjectId=null,_toasts=[],_deleted=[],_attached=[];',
     'var currentUser={uid:"u_rachel",isAnonymous:false};',
     'function showToast(t){_toasts.push(String(t))}',
@@ -4155,6 +4179,12 @@ section('Stop sharing keeps the activity (17 Sep 2026)');
     'function genId(){return "b"+(++_nid)}',
     'var BIN_DAYS=30,BIN_MAX=30;',
     'var db={persistSynced(){_persists.push(projects.map(function(x){return x.name}))},',
+    '        _cacheSyncedLocally(){},',
+    /* The users/{uid} write, which unshareLedger now WAITS for before it
+       deletes anything. It records what it carried, so the tests can prove the
+       history was in the cloud copy before the ledger went. */
+    '        _pushSyncedToFirestore(){_holdSeen.push(_syncHold);var p=projects.filter(function(x){return x.id==="p1"})[0];',
+    '          _events.push("users-write:"+((p&&!p.shared&&p.history)||[]).length);return Promise.resolve(_writeOK)},',
     '        readBin(){return _bin.slice()},writeBin(l){_bin=l.slice();return true}};',
     extractFn('isShared'),
     extractFn('ledgerRole'),
@@ -4181,7 +4211,8 @@ section('Stop sharing keeps the activity (17 Sep 2026)');
     ' _lgBase:_lgBase,_lgLoaded:_lgLoaded,_lgUnsub:_lgUnsub,_lgMeta:_lgMeta,',
     ' get toasts(){return _toasts},get deleted(){return _deleted},',
     ' get attached(){return _attached},get persists(){return _persists},',
-    ' get bin(){return _bin},binProject:binProject,',
+    ' get bin(){return _bin},binProject:binProject,get events(){return _events},',
+    ' set writeOK(v){_writeOK=v},get holdSeen(){return _holdSeen},get syncHold(){return _syncHold},',
     ' set currentProjectId(v){currentProjectId=v},',
     ' set firestore(v){firestore=v},',
     ' unshareLedger:unshareLedger,onLedgerGone:onLedgerGone,',
@@ -4203,6 +4234,7 @@ section('Stop sharing keeps the activity (17 Sep 2026)');
               delete: function () {
                 if (o.deleteFails) return Promise.reject(new Error('unavailable'));
                 sb.deleted.push(name + '/' + id);
+                sb.events.push('delete:' + name);
                 /* THIS IS THE BUG, REPRODUCED: the local delete is applied at
                    once and the snapshot handler's !exists branch runs. */
                 if (name === 'ledgers' && sb._lgUnsub[id]) sb.onLedgerGone(id, 'deleted');
@@ -4256,20 +4288,48 @@ section('Stop sharing keeps the activity (17 Sep 2026)');
        checked below against its source rather than faked here. */
   });
 
-  /* ---- an unshare that never reaches the server changes nothing ---- */
-  const B = makeSandbox({ deleteFails: true });
+  /* ---- 23 Sep 2026: THE DATA MOVES BEFORE ANYTHING IS DELETED ----
+     Cancelling the last invite emptied an activity: a snapshot swapped the
+     list mid-unshare and the fold-back landed as a second, hidden copy. The
+     order is now: fold back, write users/{uid} WITH the history, wait for it,
+     and only then delete the ledger. */
+  const doneOrder = done.then(function () {
+    const w = A.events.indexOf('users-write:3');
+    const d = A.events.indexOf('delete:ledgers');
+    check('the full history is written to the account BEFORE the ledger is deleted',
+      w > -1 && d > -1 && w < d, true);
+    check('no account snapshot is applied while the fold-back runs', A.holdSeen[0] > 0, true);
+    check('and the hold is released afterwards', A.syncHold, 0);
+    check('one tracker under that id, never two',
+      A.projects.filter(function (x) { return x.id === 'p1'; }).length, 1);
+    check('a safety copy went into Recently Removed first',
+      A.bin.some(function (r) { return r.why === 'unshared' && r.entries === 3; }), true);
+  });
+
+  /* ---- offline: the account write never confirms ---- */
+  const B = makeSandbox();
+  B.writeOK = false;
   const pB = sharedProject();
   B.projects = [pB];
   B._lgBase.lg_1 = ledgerData();
   B._lgLoaded.lg_1 = true;
   B._lgUnsub.lg_1 = function () {};
   const doneB = B.unshareLedger(pB).then(function () {
-    check('a failed delete should have thrown', 'resolved', 'threw');
-  }, function () {
-    check('a failed unshare leaves it shared', !!B.projects[0].shared, true);
-    check('a failed unshare keeps the ledger id', B.projects[0].ledgerId, 'lg_1');
-    check('a failed unshare puts the listener back', B.attached.indexOf('lg_1') > -1, true);
-    check('and it is still on the home screen', B.projects.length, 1);
+    check('offline: the ledger is NOT deleted when the account copy did not land', B.deleted.length, 0);
+    check('offline: the activity is still there with every entry', (B.projects[0].history || []).length, 3);
+    check('offline: and it is still on the home screen', B.projects.length, 1);
+  });
+
+  /* ---- the ledger delete fails after the account copy landed ---- */
+  const B2 = makeSandbox({ deleteFails: true });
+  const pB2 = sharedProject();
+  B2.projects = [pB2];
+  B2._lgBase.lg_1 = ledgerData();
+  B2._lgLoaded.lg_1 = true;
+  B2._lgUnsub.lg_1 = function () {};
+  const doneB2 = B2.unshareLedger(pB2).then(function () {
+    check('a failed ledger delete still leaves the activity whole', (B2.projects[0].history || []).length, 3);
+    check('and local, because its history is already safe in the account', !!B2.projects[0].shared, false);
   });
 
   /* ---- GUARD 1: never delete the only copy before this device has it ---- */
@@ -4378,7 +4438,7 @@ section('Stop sharing keeps the activity (17 Sep 2026)');
   check('and an unshared activity has nobody in it to manage',
     G.hasJoinedMembers({ id: 'x' }), false);
 
-  _unshareChecks.push(done, doneB, doneC, doneF);
+  _unshareChecks.push(done, doneOrder, doneB, doneB2, doneC, doneF);
 
   /* ---- and the structure that makes all of the above true ---- */
   const un = extractAsyncFn('unshareLedger');
@@ -4819,6 +4879,76 @@ section('A lending circle can be paid down a bit at a time');
   check('a round of repayments can still be closed',
     new RegExp('[\\w$]+\\.type===' + Q + 'transfer' + Q + '\\|\\|[\\w$]+\\.type===' + Q + 'repayment' + Q)
       .test(extractFn('showLendingSettleConfirm')), true);
+})();
+
+/* ---- 23 Sep 2026: NOTHING DISAPPEARS -------------------------------------
+   Cancelling the last invite left two trackers under one id: an empty one on
+   screen and the full one behind it. These run the REAL safety nets. */
+section('Nothing disappears (23 Sep 2026)');
+(function () {
+  const sb = new Function([
+    'var _bin=[],_nid=0,BIN_DAYS=30,BIN_MAX=30,_lgBase={};',
+    'function genId(){return "b"+(++_nid)}',
+    'var db={readBin(){return _bin.slice()},writeBin(l){_bin=l.slice();return true}};',
+    'function isShared(p){return !!(p&&p.shared&&p.ledgerId)}',
+    'function hydrateStub(p){return p}',
+    extractFn('_mts'),
+    extractFn('mergeHistories'),
+    extractFn('pruneBin'),
+    extractFn('binProject'),
+    extractFn('healDuplicateProjects'),
+    'var _safetyTaken={};',
+    extractFn('watchForLoss'),
+    'return {heal:healDuplicateProjects,watch:watchForLoss,get bin(){return _bin}};'
+  ].join('\n'))();
+  const h = function (n) { const a = []; for (let i = 0; i < n; i++) a.push({ id: 'e' + i, type: 'charge', amount: 10, date: '2026-09-0' + (1 + i % 9) }); return a; };
+
+  /* the exact state the bug left behind */
+  const healed = sb.heal([
+    { id: 'p1', name: 'Living Home Decor', history: [] },
+    { id: 'p2', name: 'Other', history: h(1) },
+    { id: 'p1', name: 'Living Home Decor', history: h(5) }
+  ]);
+  check('two copies under one id become one', healed.filter(function (x) { return x.id === 'p1'; }).length, 1);
+  check('and it is the one with the entries', (healed.filter(function (x) { return x.id === 'p1'; })[0].history || []).length, 5);
+  check('in the first copy\'s place on the list', healed[0].id, 'p1');
+  check('and nothing else is touched', healed.length, 2);
+  /* a stub and a local copy: the local copy wins, and entries from both are kept */
+  const mixed = sb.heal([
+    { id: 'p1', shared: true, ledgerId: 'lg_1', history: [{ id: 'x9', date: '2026-09-09' }] },
+    { id: 'p1', history: h(3) }
+  ]);
+  check('a local copy wins over a ledger stub', !!mixed[0].shared, false);
+  check('and entries from every copy are kept', mixed[0].history.length, 4);
+  const clean = [{ id: 'a' }, { id: 'b' }];
+  check('a list with no duplicates comes back untouched', sb.heal(clean) === clean, true);
+
+  /* the loss watch */
+  sb.watch([{ id: 'p1', name: 'Rent', history: h(4) }], [{ id: 'p1', name: 'Rent', history: [] }]);
+  check('a tracker being emptied is copied to Recently Removed first', sb.bin.length, 1);
+  check('with its entries', sb.bin[0].entries, 4);
+  check('marked as a safety copy', sb.bin[0].why, 'safety');
+  sb.watch([{ id: 'p1', name: 'Rent', history: h(4) }], [{ id: 'p1', name: 'Rent', history: [] }]);
+  check('the same loss is not copied twice', sb.bin.length, 1);
+  sb.watch([{ id: 'p3', name: 'Gone', history: h(2) }], []);
+  check('a tracker vanishing is copied too', sb.bin.length, 2);
+  sb.watch([{ id: 'p4', name: 'Edit', history: h(3) }], [{ id: 'p4', history: h(2) }]);
+  check('one entry deleted is an ordinary edit, not a loss', sb.bin.length, 2);
+  sb.watch([{ id: 'p5', name: 'Shared', history: h(3) }], [{ id: 'p5', shared: true, ledgerId: 'lg', history: [] }]);
+  check('a ledger stub arriving without history is not a loss', sb.bin.length, 2);
+
+  /* and where they are wired in */
+  const snapFn = extractFn('startFirestoreSync');
+  check('account snapshots are held while an unshare folds back', /_syncHold>0\)return/.test(snapFn), true);
+  const acs = /applyCloudSnapshot\([\w$]+\)\{[\s\S]*?\n?\s*\},/.exec(src);
+  const acsSrc = acs ? acs[0] : '';
+  check('applyCloudSnapshot heals duplicates', /healDuplicateProjects\(/.test(acsSrc), true);
+  check('applyCloudSnapshot watches for loss', /watchForLoss\(/.test(acsSrc), true);
+  check('applyCloudSnapshot updates the same objects in place', /Object\.assign\(/.test(acsSrc), true);
+  check('a folded-back ledger can never come back as a stub', /_unsharing\[[\w$]+\.ledgerId\]/.test(acsSrc), true);
+  check('the fold-back is re-asserted after the network waits',
+    (extractAsyncFn('unshareLedger').match(/Object\.assign\(/g) || []).length >= 1, true);
+  check('every push heals duplicates first', /healDuplicateProjects\([\w$]+\)[;,][\s\S]{0,700}projectsForCloud\(\)/.test(src), true);
 })();
 
 /* ============================ RESULTS ============================ */
