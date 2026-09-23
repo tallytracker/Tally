@@ -2139,7 +2139,7 @@ section('Invite is a header button next to Edit and Remove');
   check('all three invite buttons are driven from one place',
     /projInviteBtn/.test(lock) && /detailInviteBtn/.test(lock) && /lendInviteBtn/.test(lock), true);
   check('the label is set on every render, not once',
-    /Manage Invites/.test(lock) && /hasJoinedMembers\(/.test(lock), true);
+    /Manage Invites/.test(lock) && /hasInvitesOrMembers\(/.test(lock), true);
   /* OWNER ONLY. `admin` is a local the minifier renames, so read the flag back
      OUT of the function by the control that is known to use it, exactly as the
      viewer-lockdown assertions do. */
@@ -2150,7 +2150,7 @@ section('Invite is a header button next to Edit and Remove');
   check('tapping it invites when nobody has joined', /startInviteFlow\(\)/.test(open), true);
   check('and manages when somebody has', /showLedgerMembers\(\)/.test(open), true);
   check('which door opens is the same question the label answers',
-    /hasJoinedMembers\(/.test(open), true);
+    /hasInvitesOrMembers\(/.test(open), true);
 
   /* Having chosen the role up front, nobody should be asked for it again.
      `role` is a parameter and therefore renamed by the minifier, so these
@@ -3284,7 +3284,7 @@ section('Leaving is not the first thing a guest is offered');
    useful about: they sent the message, they know they sent it, and no button
    here makes it get read. These assertions pin the absence, which is the
    release. */
-section('An invite nobody has accepted is invisible until it is accepted');
+section('A waiting invite shows no code, no Remind, no Send again');
 (function () {
   const members = extractFn('showLedgerMembers');
   check('the dialog no longer lists outstanding invites',
@@ -3373,6 +3373,38 @@ section('An invitee who joined and left is still named, with Left Group');
     /_isLastOtherMember\(/.test(rm) && /function _isLastOtherMember/.test(src), true);
   check('unshareLedger itself still refuses to delete an unloaded ledger',
     /ledger-not-loaded/.test(extractAsyncFn('unshareLedger')), true);
+})();
+
+/* ---- A SENT INVITE IS SHOWN, AND CAN BE RECALLED (Rachel, 23 Sep 2026) ----
+   "when an invite is sent, the user's screen is not switching from Invite to
+   Manage Invites... the user cant see what happened and whats the status" and
+   "recalling an invite is not working ... the user is not even seeing it".
+   Reverses the 18 Sep "show nothing until they join" for the owner's dialog
+   only. The code is still never printed. */
+section('A sent invite shows as Waiting to join, and can be recalled');
+(function () {
+  const both = extractFn('hasInvitesOrMembers');
+  check('the button counts a waiting invite as well as a member',
+    /hasJoinedMembers\(/.test(both) && /waitingInvites\(/.test(both), true);
+  const wait = extractFn('waitingInvites');
+  check('waiting invites are the owner\'s own live codes', /pendingInvites\(/.test(wait) && /isLedgerOwner\(/.test(wait), true);
+  check('a code the ledger says was used is not waiting', /joinCode/.test(wait), true);
+  check('nor is a name that has joined', /_slotKey\(/.test(wait), true);
+  check('used or withdrawn codes are pruned by asking the invite',
+    /redeemedBy/.test(extractAsyncFn('pruneUsedInvites')) && /dropPendingInvite\(/.test(extractAsyncFn('pruneUsedInvites')), true);
+  const members = extractFn('showLedgerMembers');
+  check('the dialog lists waiting invites', /waitingInvites\(/.test(members) && /Waiting to join/.test(members), true);
+  check('each one has Recall invite', /Recall invite/.test(members) && /confirmRecallInvite\(/.test(members), true);
+  check('the waiting chip is styled', /\.role-waiting\{/.test(src), true);
+  check('recall confirms first', /doRecallInvite\(/.test(extractFn('confirmRecallInvite')), true);
+  const rc = extractAsyncFn('doRecallInvite');
+  check('recall kills the code on the server', /revokeInviteCode\(/.test(rc), true);
+  check('and forgets it on the phone', /dropPendingInvite\(/.test(rc), true);
+  check('re-finding the group after the await, by id', /getProject\(/.test(rc.slice(rc.indexOf('revokeInviteCode'))), true);
+  const create = extractAsyncFn('doCreateInvite');
+  check('after sending, the screen moves to Manage Invites',
+    create.indexOf('showLedgerMembers') > create.indexOf('createInviteCode'), true);
+  check('ledger meta keeps the last used code', /joinCode:[\w$.]+\|\|/.test(src), true);
 })();
 
 section('Resharing supersedes the old code instead of running two');
