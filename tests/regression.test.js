@@ -2327,6 +2327,8 @@ section('v116 tracker Menu and wording');
   check('breakdown: three statuses', /Partially settled/.test(ppb) && /Outstanding/.test(ppb) && />Settled</.test(ppb), true);
   check('breakdown: net per person, line by line', /Net to pay/.test(ppb) && /Net to receive/.test(ppb) && /Amount due to /.test(ppb) && / to others</.test(ppb), true);
   check('breakdown: no "You" in place of a name', /'You'/.test(ppb), false);
+  check('breakdown: someone who paid nothing still gets a card', /Nothing paid yet/.test(ppb) && !/if\(![\w$]+\.length\)return;/.test(ppb), true);
+  check('breakdown: blue person icons, dark-blue sub-titles', /\.pp-ico\{[^}]*#2f6fce/.test(src) && /\.pp-sub-title\{[^}]*background:#1d3557/.test(src), true);
   check('breakdown: uses the pair ledger', /personPairLedger\(/.test(ppb), true);
   check('no "Tap a person" hint', /Tap a person to see/.test(rpd4), false);
   check('no "Tap an entry to edit" hint', /Tap an entry to edit/.test(src), false);
