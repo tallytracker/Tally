@@ -2318,7 +2318,16 @@ section('v116 tracker Menu and wording');
   check('no tagline under the logo', /The simple balance tracker<\/p>/.test(src), false);
   check('the payment box says Amount only', /Amount I (paid|received)/.test(src), false);
   const rpd4 = extractFn('renderProjectDetail');
-  check('settle-up chips read To pay / To receive', /To pay /.test(rpd4) && /To receive /.test(rpd4) && !/Owes |Gets back /.test(rpd4), true);
+  check('no Owes / Gets back wording left', /'Owes |'Gets back /.test(rpd4), false);
+  const ppb = extractFn('perPersonBreakdownHtml');
+  check('breakdown: a table per payer', /Transactions paid by /.test(ppb) && /Total unsettled/.test(ppb), true);
+  check('breakdown: three statuses', /Partially settled/.test(ppb) && /Outstanding/.test(ppb) && />Settled</.test(ppb), true);
+  check('breakdown: net per person, line by line', /Net to pay/.test(ppb) && /Net to receive/.test(ppb) && /unsettled share of /.test(ppb), true);
+  check('breakdown: uses the pair ledger', /personPairLedger\(/.test(ppb), true);
+  check('no "Tap a person" hint', /Tap a person to see/.test(rpd4), false);
+  check('no "Tap an entry to edit" hint', /Tap an entry to edit/.test(src), false);
+  check('order: Categories, Per-Person Breakdown, then Fastest way', /Per-Person Breakdown.,[^;]*\)\+[\w$]+[;}]/.test(rpd4) && /Spending Categories.,[\s\S]*?projCategoryRollups.\)\.innerHTML=([\w$]+)\+/.test(rpd4), true);
+  check('History starts open', /_histOpen\[[\w$]+\.id\]!==false/.test(extractFn('syncHistFold')), true);
   check('shared settle-up text says to pay', /' → '/.test(src), false);
   const pb = extractFn('showPersonBreakdown');
   check('person popup: one section per payer', /Transactions paid by /.test(pb) && /pb-sec/.test(pb), true);
@@ -3551,7 +3560,7 @@ section('Per-Person Breakdown opens closed on a group project');
   ['settle', 'cats'].forEach(function (k) {
     check(k + ' is a folding section', new RegExp('projSectionHtml\\([\\w$]+,.' + k + '.').test(rpd), true);
   });
-  check('Settle up and Categories open, Team closed', /settle:true,team:false,cats:true/.test(src), true);
+  check('Settle up, Per-Person and Categories start closed (24 Sep)', /settle:false,team:false,cats:false/.test(src), true);
 })();
 
 
