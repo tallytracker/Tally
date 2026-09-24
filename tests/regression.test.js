@@ -2339,7 +2339,8 @@ section('v116 tracker Menu and wording');
   check('each person\'s cost shows under the dashboard', /personCostsHtml\(/.test(extractFn('renderProjectDetail')) && /entryShareOf\(/.test(extractFn('personCostsHtml')), true);
   check('each person\'s cost is rounded to whole numbers', /Math\.round\(/.test(extractFn('personCostsHtml')), true);
   const hah = extractFn('homeActionsHtml');
-  check('create icons: main emoji with a corner badge', /🧘<span class=.act-badge.>🔁/.test(hah) && /🏠<span class=.act-badge.>🧳/.test(hah) && /🤝<span class=.act-badge.>💸/.test(hah), true);
+  check('trip button says event, not party', /renovation, event/.test(hah) && !/party/.test(hah), true);
+  check('create icons: one emoji each, no badges (house for trips)', /act-pic[^>]*>🧘</.test(hah) && /act-pic[^>]*>🏠</.test(hah) && /act-pic[^>]*>🤝</.test(hah) && !/act-badge/.test(hah), true);
   check('blue arrows on Create new and the person cards', /\.create-zone-title \.group-chevron,\.pp-table \.group-chevron\{[^}]*#2f6fce/.test(src), true);
   // Admin analytics (24 Sep 2026): the door is hidden for everyone else; the lock is on the server.
   check('admin: only the admin email opens analytics', /mabelrach9@gmail\.com/.test(src) && /isAnonymous/.test(extractFn('isAdminUser')), true);
