@@ -2328,6 +2328,16 @@ section('v116 tracker Menu and wording');
   check('breakdown: blue person icons', /\.pp-ico\{[^}]*#2f6fce/.test(src), true);
   // v127 (24 Sep 2026)
   check('home: Add a section is smaller', /\.nsb-title\{font-size:14px/.test(src), true);
+  // v130 (24 Sep 2026)
+  const lmc = new Function('_lgMeta', extractFn('liveMemberCount') + '; return liveMemberCount;');
+  check('badge: the live ledger count beats a stale stub', lmc({ L: { memberCount: 3 } })({ ledgerId: 'L', memberCount: 1 }), 3);
+  check('badge: the stub is the fallback before the ledger answers', lmc({})({ ledgerId: 'L', memberCount: 2 }), 2);
+  check('badge: chip and dormant check both read the live count', /liveMemberCount\(/.test(extractFn('roleChipHtml')) && /liveMemberCount\(/.test(extractFn('isDormantLedger')), true);
+  const ts = new Function(extractFn('tightSym') + '; return tightSym;')();
+  check('breakdown tables use $ not USD', ts('USD '), '$');
+  check('a symbol stays a symbol', ts('$'), '$');
+  check('each person\'s cost shows under the dashboard', /personCostsHtml\(/.test(extractFn('renderProjectDetail')) && /entryShareOf\(/.test(extractFn('personCostsHtml')), true);
+  check('blue arrows on Create new and the person cards', /\.create-zone-title \.group-chevron,\.pp-table \.group-chevron\{[^}]*#2f6fce/.test(src), true);
   // Admin analytics (24 Sep 2026): the door is hidden for everyone else; the lock is on the server.
   check('admin: only the admin email opens analytics', /mabelrach9@gmail\.com/.test(src) && /isAnonymous/.test(extractFn('isAdminUser')), true);
   check('admin: the card is synced on Settings and on sign-in changes', /syncAdminCard\(\)/.test(extractFn('openSettings')) && /syncAdminCard\(\)/.test(extractFn('renderAuthCard')), true);
@@ -3446,7 +3456,7 @@ section('A waiting invite shows no code, no Remind, no Send again');
   const chip = extractFn('roleChipHtml');
   check('the home card carries no "Invited" badge', /Invited/.test(chip), false);
   check('it badges an owner only once somebody else is counted',
-    /memberCount/.test(chip) && /Shared/.test(chip), true);
+    /[mM]emberCount/.test(chip) && /Shared/.test(chip), true);
   const strip = extractFn('sharedStripHtml');
   check('and an owner gets no strip at all',
     /isLedgerOwner\(p\)\)?\s*return\s*''|isLedgerOwner\(p\)\)return""/.test(strip) ||
@@ -3457,7 +3467,7 @@ section('A waiting invite shows no code, no Remind, no Send again');
      it draws has to be "is somebody in", not "has a code been sent". */
   const has = extractFn('hasJoinedMembers');
   check('joined means somebody other than the owner is in members',
-    /memberCount/.test(has), true);
+    /[mM]emberCount/.test(has), true);
   check('it does not count a code that was merely sent',
     /pendingInvites/.test(has), false);
   check('a member who has since LEFT still counts, or their row is unreachable',
@@ -4403,6 +4413,7 @@ section('Stop sharing keeps the activity (17 Sep 2026)');
     extractFn('pruneBin'),
     extractFn('binProject'),
     extractAsyncFn('unshareLedger'),
+    extractFn('liveMemberCount'),
     extractFn('isDormantLedger'),
     /* invitesOutNobodyJoined was here until 18 Sep 2026. hasJoinedMembers is
        the predicate that replaced it, and it draws a different line: not "is a
