@@ -2320,29 +2320,41 @@ section('v116 tracker Menu and wording');
   const rpd4 = extractFn('renderProjectDetail');
   check('no Owes / Gets back wording left', /'Owes |'Gets back /.test(rpd4), false);
   const ppb = extractFn('perPersonBreakdownHtml');
+  // 24 Sep 2026 (tester suggestion): one card per person; + owed back, - their share, = net.
+  check('breakdown: one folding card per person, closed', /<details class="pp-table">/.test(ppb) && !/pp-table" open/.test(ppb), true);
+  check('breakdown: the two folding rows', /Owed back to /.test(ppb) && /’s share /.test(ppb) && /pp-part/.test(ppb), true);
+  check('breakdown: then the net', /Net to pay/.test(ppb) && /Net to receive/.test(ppb), true);
+  check('breakdown: blue person icons', /\.pp-ico\{[^}]*#2f6fce/.test(src), true);
+  const ppn = new Function('rd2', 'amtMain', 'entryShareOf', 'getEntriesSinceLastSettlement',
+    extractFn('perPersonNet') + '; return perPersonNet;')(
+    x => Math.round(x * 100) / 100, (p, h) => h.amount,
+    (p, h, n) => { const a = h.splitAmong || p.participants; return a.indexOf(n) > -1 ? h.amount / a.length : 0; },
+    p => p.history);
+  const ski = { participants: ['R', 'S', 'D'], history: [
+    { id: 'e1', type: 'charge', amount: 300, paidBy: 'R' }, { id: 'e2', type: 'charge', amount: 90, paidBy: 'S' },
+    { id: 'e3', type: 'charge', amount: 60, paidBy: 'D' }, { id: 'e4', type: 'charge', amount: 45, paidBy: 'R' },
+    { id: 'p1', type: 'payment', from: 'D', to: 'R', amount: 50 } ] };
+  const rr = ppn(ski, 'R');
+  check('net: R is owed back 230 (200 + 30)', rr.back, 230);
+  check('net: R\'s share of the others is 50 (30 + 20)', rr.share, 50);
+  check('net: R received 50', rr.setl, -50);
+  check('net: R nets +130', rr.net, 130);
+  check('net: S nets -75', ppn(ski, 'S').net, -75);
+  check('net: D nets -55', ppn(ski, 'D').net, -55);
   check('breakdown: a folding table per payer, closed by default', /<details class="pp-table">/.test(ppb) && !/pp-table" open/.test(ppb), true);
-  check('breakdown: the total row says who is owed', /Total outstanding to be paid to /.test(ppb) && /pp-foot/.test(ppb), true);
   check('breakdown: tables are headed by the name, not "paid by you"', /Transactions paid by (you|.\+)/.test(ppb), false);
   check('breakdown: a person icon on every table and net card', (ppb.match(/[\w$]+\+\s*.<span class="pp-who">/g) || []).length >= 2 && /pp-ico/.test(ppb), true);
-  check('breakdown: three statuses', /Partially settled/.test(ppb) && /Outstanding/.test(ppb) && />Settled</.test(ppb), true);
-  check('breakdown: net per person, line by line', /Net to pay/.test(ppb) && /Net to receive/.test(ppb) && /Amount due to /.test(ppb) && / to others</.test(ppb), true);
   check('breakdown: no "You" in place of a name', /'You'/.test(ppb), false);
   check('breakdown: someone who paid nothing still gets a card', /Nothing paid yet/.test(ppb) && !/if\(![\w$]+\.length\)return;/.test(ppb), true);
-  check('breakdown: outstanding is green for every payer, not only the viewer', /pp-foot.\+\([\w$]+>\.?0?\.01\?/.test(ppb) && !/&&mine/.test(ppb), true);
-  check('breakdown: total rows on light blue', /\.pp-foot\{[^}]*rgba\(47,111,206/.test(src) && /\.pp-net-total\{[^}]*rgba\(47,111,206/.test(src), true);
   // 24 Sep 2026 (tester): the create buttons must sit inside a frame. Light blue frame, white buttons, folds open by default.
   check('home: Create new is a light-blue frame again', /\.create-zone\{[^}]*rgba\(47,111,206,\.08\)/.test(src) && !/\.create-zone \.act-btn\{[^}]*#1d3557/.test(src), true);
   check('home: Create new folds and starts open', /toggleCreateZone\(/.test(extractFn('homeActionsHtml')) && /collapsedGroups\[.__create__.\]/.test(extractFn('homeActionsHtml')), true);
   check('settings: reminders are one switch and one line', /When turned on, you/.test(extractFn('renderNotifSettings')) && !/Remind me to log sessions/.test(extractFn('renderNotifSettings')) && !/_reminderTimingCopy\(\)/.test(extractFn('renderNotifSettings')), true);
   check('settings: the iPhone app draws the same', /When turned on, you/.test(extractFn('_renderNotifSettingsNative')), true);
-  check('breakdown: net cards fold by name like Who paid what', /<details class="pp-table pp-net">/.test(ppb) && !/pp-net" open/.test(ppb), true);
-  check('breakdown: sub-title reads Transactions paid by each person', />Transactions paid by each person</.test(ppb) && !/>Who paid what</.test(ppb), true);
   check('home: create icons keep their own tints again', /\.create-zone \.act-pic/.test(src) === false, true);
   check('home: an empty section says how to fill it', /Press and hold any tracker, then drag it here/.test(extractFn('renderProjects')), true);
   check('home: naming a new section shows the drag arrow', /maybeShowDragHint\(\)/.test(extractFn('commitRenameSection')) && /coachShow\(/.test(extractFn('maybeShowDragHint')), true);
   check('home: invite line breaks before Enter it here', /Got a code from someone\?<br>Enter it here/.test(src), true);
-  check('breakdown: blue person icons, dark-blue sub-titles', /\.pp-ico\{[^}]*#2f6fce/.test(src) && /\.pp-sub-title\{[^}]*background:#1d3557/.test(src), true);
-  check('breakdown: uses the pair ledger', /personPairLedger\(/.test(ppb), true);
   check('no "Tap a person" hint', /Tap a person to see/.test(rpd4), false);
   check('no "Tap an entry to edit" hint', /Tap an entry to edit/.test(src), false);
   check('order: Categories, Per-Person Breakdown, then Fastest way', /Per-Person Breakdown.,[^;]*\)\+[\w$]+[;}]/.test(rpd4) && /Spending Categories.,[\s\S]*?projCategoryRollups.\)\.innerHTML=([\w$]+)\+/.test(rpd4), true);
