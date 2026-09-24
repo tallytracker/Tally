@@ -2354,7 +2354,7 @@ section('v116 tracker Menu and wording');
   check('inside a tracker: ONE badge that opens the members table', /roleChipHtml\(/.test(extractFn('sharedMarkHtml')) && /showLedgerMembers\(\)/.test(extractFn('sharedMarkHtml')) && (src.match(/innerHTML=sharedMarkHtml\([\w$]+\)[;,}]/g) || []).length === 3, true);
   check('join screen: no letters-and-numbers hint', /six of them/.test(src), false);
   check('menu items look like buttons (bordered, rounded)', /\.menu-row\{[^}]*border:1px solid[^}]*border-radius:10px/.test(src), true);
-  check('home: invites get the Create new frame and fold', /invites-zone/.test(extractFn('homeActionsHtml')) && /toggleZone\(this,.__invites__.\)/.test(extractFn('homeActionsHtml')), true);
+  check('home: invites get the Create new frame and fold', /invites-zone/.test(extractFn('homeActionsHtml')) && /toggleZone\(this,.__zone_invites__.\)/.test(extractFn('homeActionsHtml')), true);
   const ppn = new Function('rd2', 'amtMain', 'entryShareOf', 'getEntriesSinceLastSettlement',
     extractFn('perPersonNet') + '; return perPersonNet;')(
     x => Math.round(x * 100) / 100, (p, h) => h.amount,
@@ -2378,12 +2378,22 @@ section('v116 tracker Menu and wording');
   check('breakdown: someone who paid nothing still gets a card', /Nothing paid yet/.test(ppb) && !/if\(![\w$]+\.length\)return;/.test(ppb), true);
   // 24 Sep 2026 (tester): the create buttons must sit inside a frame. Light blue frame, white buttons, folds open by default.
   check('home: Create new is a light-blue frame again', /\.create-zone\{[^}]*rgba\(47,111,206,\.08\)/.test(src) && !/\.create-zone \.act-btn\{[^}]*#1d3557/.test(src), true);
-  check('home: Create new folds and starts open', /toggleCreateZone\(/.test(extractFn('homeActionsHtml')) && /collapsedGroups\[.__create__.\]/.test(extractFn('homeActionsHtml')), true);
+  check('home: Create new folds and starts open', /toggleCreateZone\(/.test(extractFn('homeActionsHtml')) && /zoneCollapsed\(.__zone_create__.\)/.test(extractFn('homeActionsHtml')), true);
+  (function(){
+    const zc = new Function('projects','collapsedGroups','ZONE_FOLD_AFTER', 'return (' + extractFn('zoneCollapsed') + ')');
+    check('zones: open for a newcomer (0 trackers)', zc([], {}, 2)('__zone_create__'), false);
+    check('zones: still open with 1 tracker', zc([{}], {}, 2)('__zone_create__'), false);
+    check('zones: folded from 2 trackers', zc([{},{}], {}, 2)('__zone_invites__'), true);
+    check('zones: the user unfolding wins', zc([{},{},{}], {__zone_create__:false}, 2)('__zone_create__'), false);
+    check('zones: the user folding wins', zc([], {__zone_create__:true}, 2)('__zone_create__'), true);
+    check('zones: fold threshold is 2', /ZONE_FOLD_AFTER=2/.test(src), true);
+  })();
   check('settings: reminders are one switch and one line', /When turned on, you/.test(extractFn('renderNotifSettings')) && !/Remind me to log sessions/.test(extractFn('renderNotifSettings')) && !/_reminderTimingCopy\(\)/.test(extractFn('renderNotifSettings')), true);
   check('settings: the iPhone app draws the same', /When turned on, you/.test(extractFn('_renderNotifSettingsNative')), true);
   check('home: create icons keep their own tints again', /\.create-zone \.act-pic/.test(src) === false, true);
   check('home: an empty section says how to fill it', /Press and hold any tracker, then drag it here/.test(extractFn('renderProjects')), true);
   check('home: naming a new section shows the drag arrow', /maybeShowDragHint\(\)/.test(extractFn('commitRenameSection')) && /coachShow\(/.test(extractFn('maybeShowDragHint')), true);
+  check('home: invite card has a coloured emoji tile like the create buttons', /id="homeInvitesBtn"[^>]*><span class="act-pic violet">📩<\/span>/.test(src) && /\.act-pic\.violet\{/.test(src), true);
   check('home: invite card reads like a create button', /act-title">Got a code from someone\?<\/span><span class="act-sub">Enter it here/.test(src), true);
   check('no "Tap a person" hint', /Tap a person to see/.test(rpd4), false);
   check('no "Tap an entry to edit" hint', /Tap an entry to edit/.test(src), false);
@@ -3554,6 +3564,8 @@ section('A sent invite shows as Waiting to join, and can be recalled');
   const members = extractFn('showLedgerMembers');
   check('the dialog lists waiting invites', /waitingInvites\(/.test(members) && /Waiting to join/.test(members), true);
   check('each one has Recall', /Recall/.test(members) && /confirmRecallInvite\(/.test(members), true);
+  check('an activity\'s named counterparty is shown on its invite row', /participant\|\|[\w$]+\|\|.Invite sent/.test(members) && /\.counterparty/.test(members), true);
+  check('a joined counterparty keeps the settings name, account name underneath', /<small>.\+esc\(/.test(members), true);
   check('the waiting chip is styled', /\.role-waiting\{/.test(src), true);
   check('recall confirms first', /doRecallInvite\(/.test(extractFn('confirmRecallInvite')), true);
   const rc = extractAsyncFn('doRecallInvite');
