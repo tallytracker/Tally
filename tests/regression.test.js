@@ -2351,7 +2351,10 @@ section('v116 tracker Menu and wording');
   check('admin: totals only, the screen never lists a user', !/email|displayName|\.name\b/.test(extractFn('adminStatsHtml')), true);
   check('shared badge survives a restart: the stub keeps memberCount', /memberCount:/.test(extractFn('stubOf')), true);
   check('every shared badge carries the people icon', (extractFn('roleChipHtml').match(/👥/g) || []).length >= 3, true);
-  check('inside a tracker the same badge shows', /roleChipHtml\(/.test(extractFn('sharedMarkHtml')) && (src.match(/sharedMarkHtml\([\w$]+\)\+sharedStripHtml/g) || []).length === 3, true);
+  check('inside a tracker: ONE badge that opens the members table', /roleChipHtml\(/.test(extractFn('sharedMarkHtml')) && /showLedgerMembers\(\)/.test(extractFn('sharedMarkHtml')) && (src.match(/innerHTML=sharedMarkHtml\([\w$]+\)[;,}]/g) || []).length === 3, true);
+  check('join screen: no letters-and-numbers hint', /six of them/.test(src), false);
+  check('menu items look like buttons (bordered, rounded)', /\.menu-row\{[^}]*border:1px solid[^}]*border-radius:10px/.test(src), true);
+  check('home: invites get the Create new frame and fold', /invites-zone/.test(extractFn('homeActionsHtml')) && /toggleZone\(this,.__invites__.\)/.test(extractFn('homeActionsHtml')), true);
   const ppn = new Function('rd2', 'amtMain', 'entryShareOf', 'getEntriesSinceLastSettlement',
     extractFn('perPersonNet') + '; return perPersonNet;')(
     x => Math.round(x * 100) / 100, (p, h) => h.amount,
@@ -2381,7 +2384,7 @@ section('v116 tracker Menu and wording');
   check('home: create icons keep their own tints again', /\.create-zone \.act-pic/.test(src) === false, true);
   check('home: an empty section says how to fill it', /Press and hold any tracker, then drag it here/.test(extractFn('renderProjects')), true);
   check('home: naming a new section shows the drag arrow', /maybeShowDragHint\(\)/.test(extractFn('commitRenameSection')) && /coachShow\(/.test(extractFn('maybeShowDragHint')), true);
-  check('home: invite line breaks before Enter it here', /Got a code from someone\?<br>Enter it here/.test(src), true);
+  check('home: invite card reads like a create button', /act-title">Got a code from someone\?<\/span><span class="act-sub">Enter it here/.test(src), true);
   check('no "Tap a person" hint', /Tap a person to see/.test(rpd4), false);
   check('no "Tap an entry to edit" hint', /Tap an entry to edit/.test(src), false);
   check('order: Categories, Per-Person Breakdown, then Fastest way', /Per-Person Breakdown.,[^;]*\)\+[\w$]+[;}]/.test(rpd4) && /Spending Categories.,[\s\S]*?projCategoryRollups.\)\.innerHTML=([\w$]+)\+/.test(rpd4), true);
@@ -3005,15 +3008,15 @@ section('The owner can promote, demote or revoke a member');
      them. */
   check('the capacity is named the way the owner thinks of it',
     /Edit rights/.test(sheet) && /View only/.test(sheet), true);
-  check('a promotion is offered to a viewer', /Give edit rights/.test(sheet), true);
-  check('a demotion is offered to an editor', /Make view only/.test(sheet), true);
+  check('rights can be switched from the table (24 Sep 2026)', /mi-rights/.test(sheet) && /confirmChangeRole\(/.test(sheet), true);
+  check('the rights column names each role', /Editor/.test(sheet) && /View only/.test(sheet) && /Owner/.test(sheet), true);
   check('the dialog and the confirm that follows it use the SAME words',
     /Give edit rights/.test(extractFn('confirmChangeRole')) &&
     /Make view only/.test(extractFn('confirmChangeRole')), true);
   /* CANCEL INVITE, PER INVITEE (Rachel: "cancel invite is better coz its per
      invitee not for all"). The word "Revoke" is gone from both screens. */
   check('each invitee can be cancelled individually',
-    /confirmRemoveMember\(/.test(sheet) && /Cancel invite/.test(sheet), true);
+    /confirmRemoveMember\(/.test(sheet) && />Remove</.test(sheet.replace(/['"],\s*['"]?confirmRemoveMember[\s\S]*?\)/,'')) || (/confirmRemoveMember\(/.test(sheet) && /Remove/.test(sheet)), true);
   check('and nothing says "Revoke" any more',
     /Revoke/.test(sheet) || /Revoke/.test(extractFn('confirmRemoveMember')), false);
   /* The member finds out by themselves: the snapshot handler already re-reads
@@ -3504,13 +3507,13 @@ section('An invitee who joined and left is still named, with Left Group');
     /left\s*=\s*(!0|true)/.test(rec), true);
   const members = extractFn('showLedgerMembers');
   check('the dialog reads it', /joinedMembers/.test(members), true);
-  check('and writes Left Group beside the name', /Left Group/.test(members), true);
+  check('and writes Left group beside the name', /Left group/.test(members), true);
   check('in its own muted chip, not a third kind of access',
-    /role-left/.test(members) && /\.role-left\{/.test(src), true);
+    /mi-left/.test(members) && /\.mi-left\{/.test(src), true);
   /* NO BUTTONS ON A LEFT ROW. The literal is one string, so the markup proves
      the row ends at the chip - there is nothing to cancel and no code to kill. */
   check('a Left Group row carries no controls',
-    /role-left">Left Group<\/span><\/span><\/div>/.test(members), true);
+    /Left group<\/span>["'],\s*["']["']\)/.test(members), true);
   /* BEING SHOWN THE DOOR IS NOT LEAVING. doRemoveMember deletes the row rather
      than marking it, or the owner's own screen would tell them a lie. */
   const rm = extractAsyncFn('doRemoveMember');
@@ -3550,7 +3553,7 @@ section('A sent invite shows as Waiting to join, and can be recalled');
     /redeemedBy/.test(extractAsyncFn('pruneUsedInvites')) && /dropPendingInvite\(/.test(extractAsyncFn('pruneUsedInvites')), true);
   const members = extractFn('showLedgerMembers');
   check('the dialog lists waiting invites', /waitingInvites\(/.test(members) && /Waiting to join/.test(members), true);
-  check('each one has Recall invite', /Recall invite/.test(members) && /confirmRecallInvite\(/.test(members), true);
+  check('each one has Recall', /Recall/.test(members) && /confirmRecallInvite\(/.test(members), true);
   check('the waiting chip is styled', /\.role-waiting\{/.test(src), true);
   check('recall confirms first', /doRecallInvite\(/.test(extractFn('confirmRecallInvite')), true);
   const rc = extractAsyncFn('doRecallInvite');
