@@ -2325,6 +2325,16 @@ section('v116 tracker Menu and wording');
   check('breakdown: the two folding rows', /Owed back to /.test(ppb) && /’s share /.test(ppb) && /pp-part/.test(ppb), true);
   check('breakdown: then the net', /Net to pay/.test(ppb) && /Net to receive/.test(ppb), true);
   check('breakdown: blue person icons', /\.pp-ico\{[^}]*#2f6fce/.test(src), true);
+  // v127 (24 Sep 2026)
+  check('home: Add a section is smaller', /\.nsb-title\{font-size:14px/.test(src), true);
+  // Admin analytics (24 Sep 2026): the door is hidden for everyone else; the lock is on the server.
+  check('admin: only the admin email opens analytics', /mabelrach9@gmail\.com/.test(src) && /isAnonymous/.test(extractFn('isAdminUser')), true);
+  check('admin: the card is synced on Settings and on sign-in changes', /syncAdminCard\(\)/.test(extractFn('openSettings')) && /syncAdminCard\(\)/.test(extractFn('renderAuthCard')), true);
+  check('admin: numbers come from the adminStats function', /httpsCallable\(.adminStats.\)/.test(src), true);
+  check('admin: totals only, the screen never lists a user', !/email|displayName|\.name\b/.test(extractFn('adminStatsHtml')), true);
+  check('shared badge survives a restart: the stub keeps memberCount', /memberCount:/.test(extractFn('stubOf')), true);
+  check('every shared badge carries the people icon', (extractFn('roleChipHtml').match(/👥/g) || []).length >= 3, true);
+  check('inside a tracker the same badge shows', /roleChipHtml\(/.test(extractFn('sharedMarkHtml')) && (src.match(/sharedMarkHtml\([\w$]+\)\+sharedStripHtml/g) || []).length === 3, true);
   const ppn = new Function('rd2', 'amtMain', 'entryShareOf', 'getEntriesSinceLastSettlement',
     extractFn('perPersonNet') + '; return perPersonNet;')(
     x => Math.round(x * 100) / 100, (p, h) => h.amount,
