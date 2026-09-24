@@ -2295,7 +2295,7 @@ section('v116 tracker Menu and wording');
   });
   check('nothing sits under History any more', /hist-tools/.test(src), false);
   const html = src.slice(src.indexOf('id="detailMenuItems"'), src.indexOf('</div>', src.indexOf('id="detailMenuItems"')));
-  ['oneOffToggle', 'settleResetBtn', 'detailShareBtn', 'detailExportBtn', 'detailClearBtn'].forEach(function (id) {
+  ['detailEditBtn', 'detailShareBtn', 'detailExportBtn', 'oneOffToggle', 'settleResetBtn', 'detailRemoveBtn'].forEach(function (id) {
     check('activity Menu holds ' + id, html.indexOf('id="' + id + '"') >= 0, true);
   });
   ['proj', 'detail', 'lend'].forEach(function (k) {
@@ -2307,7 +2307,13 @@ section('v116 tracker Menu and wording');
   check('the header no longer carries Edit or Delete', /header-act-btn[^>]*>(Edit|Delete)</.test(src), false);
   const menu = extractFn('showTrackerMenu');
   check('Menu honours what the role lockdown hid', /display!==.none./.test(menu), true);
-  check('Clear All is set apart in red', /data-danger|dataset\.danger/.test(src) && /menu-sep/.test(menu), true);
+  // v116 round 3: Clear All is gone; Settle All & Reset takes its place, Delete is red.
+  check('no Clear All in any Menu', /id="?\w*ClearBtn/.test(src), false);
+  check('Delete is drawn in red', /danger/.test(menu), true);
+  const order = function (k) { const a = src.indexOf('id="' + k + 'MenuItems"');
+    return (src.slice(a, src.indexOf('</div>', a)).match(/>([^<]+)<\/button>/g) || []).map(x => x.slice(1, -9)).join('|'); };
+  check('project Menu order', order('proj'), 'Edit|Share Balance|Export|Settle All &amp; Reset|Delete');
+  check('activity Menu order', order('detail'), 'Edit|Share Balance|Export|Add a one-off charge|Settle All &amp; Reset|Delete');
   const render = extractFn('renderProjects');
   check('Add a section waits for 3 trackers', /\.length>=3\|\|/.test(render), true);
 })();
@@ -2980,8 +2986,10 @@ section('A non-owner is not offered the owner-only controls (11 Sep 2026)');
     const before = fnSrc.slice(Math.max(0, at - (within || 300)), at);
     return /canAdminHere\(/.test(before) ? true : 'no admin guard within ' + (within || 300) + ' chars';
   };
-  check('Settle All & Reset is not built unless the viewer may admin',
-    guardsLabel(render, 'Settle All &amp; Reset'), true);
+  check('Settle All & Reset is not listed unless the viewer may admin',
+    guardsLabel(render, 'projSettleBtn', 60) === 'no admin guard within 60 chars' &&
+    /projSettleBtn[\s\S]{0,160}canAdminHere\(/.test(render), true);
+  check('and it is no longer a button on the main screen', /btn-settle[^>]*showProjectSettleConfirm/.test(render), false);
   check('and it is the same predicate that refuses the write',
     /canAdminHere\(/.test(extractFn('doSettleReset')), true);
   /* Splitting costs / Just tracking rewrites what the group MEANS for every
@@ -3506,13 +3514,20 @@ section('Team Details opens closed on a group project');
   const rpd = extractFn('renderProjectDetail');
   check('the section is named Team Details', rpd.indexOf('Team Details') >= 0, true);
   check('the old always-open People heading is gone', rpd.indexOf('>People<') >= 0, false);
-  check('it is a control, not a label', rpd.indexOf('togglePeopleDetails') >= 0, true);
-  check('the cards start hidden', /peopleDetailsBox[\s\S]{0,120}display:none/.test(rpd), true);
+  // v116: every project section is drawn by projSectionHtml; Team starts closed.
+  check('it is a control, not a label', /projSectionHtml\([\w$]+,.team./.test(rpd), true);
+  check('the cards start hidden', /team:false/.test(src), true);
   check('the toggle exists and flips the state', /function togglePeopleDetails/.test(src), true);
   check('the collapsed state is not persisted to the project',
     extractFn('togglePeopleDetails').indexOf('saveProject') >= 0, false);
   check('the row still says how many people are in there',
-    /Team Details · [^<]*\+/.test(rpd), true);
+    /.Team Details.,[\w$]+\.length/.test(rpd), true);
+  const sec = extractFn('projSectionHtml');
+  check('sections share the History heading', /history-header/.test(sec) && /history-toggle/.test(sec) && /group-count/.test(sec), true);
+  ['settle', 'cats'].forEach(function (k) {
+    check(k + ' is a folding section', new RegExp('projSectionHtml\\([\\w$]+,.' + k + '.').test(rpd), true);
+  });
+  check('Settle up and Categories open, Team closed', /settle:true,team:false,cats:true/.test(src), true);
 })();
 
 
