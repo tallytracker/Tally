@@ -2314,6 +2314,36 @@ section('v116 tracker Menu and wording');
     return (src.slice(a, src.indexOf('</div>', a)).match(/>([^<]+)<\/button>/g) || []).map(x => x.slice(1, -9)).join('|'); };
   check('project Menu order', order('proj'), 'Edit|Share Balance|Export|Settle All &amp; Reset|Delete');
   check('activity Menu order', order('detail'), 'Edit|Share Balance|Export|Add a one-off charge|Settle All &amp; Reset|Delete');
+  // ---- round 4 (24 Sep 2026) ----
+  check('no tagline under the logo', /The simple balance tracker<\/p>/.test(src), false);
+  check('the payment box says Amount only', /Amount I (paid|received)/.test(src), false);
+  const rpd4 = extractFn('renderProjectDetail');
+  check('settle-up chips read To pay / To receive', /To pay /.test(rpd4) && /To receive /.test(rpd4) && !/Owes |Gets back /.test(rpd4), true);
+  check('shared settle-up text says to pay', /' → '/.test(src), false);
+  const pb = extractFn('showPersonBreakdown');
+  check('person popup: one section per payer', /Transactions paid by /.test(pb) && /pb-sec/.test(pb), true);
+  check('person popup: statuses', /Partially settled/.test(pb) && /Outstanding/.test(pb) && /Settled/.test(pb), true);
+  check('person popup: net and plan', /Net to pay/.test(pb) && /Net to receive/.test(pb) && /Fastest way to settle up/.test(pb), true);
+  check('person popup: no "Tap a section" hint', /Tap a section/.test(pb), false);
+  const ppl = new Function('rd2', 'amtMain', 'entryShareOf', 'getEntriesSinceLastSettlement',
+    extractFn('personPairLedger') + '; return personPairLedger;')(
+    x => Math.round(x * 100) / 100, (p, h) => h.amount,
+    (p, h, n) => { const a = h.splitAmong || p.participants; return a.indexOf(n) > -1 ? h.amount / a.length : 0; },
+    p => p.history);
+  const trip = { participants: ['R', 'S', 'L'], history: [
+    { id: 'e1', type: 'charge', amount: 300, paidBy: 'R', date: '2026-09-19' },
+    { id: 'e2', type: 'charge', amount: 90, paidBy: 'S', date: '2026-09-20' },
+    { id: 'e3', type: 'charge', amount: 60, paidBy: 'L', date: '2026-09-21' },
+    { id: 'p1', type: 'payment', from: 'L', to: 'R', amount: 50, date: '2026-09-22' } ] };
+  const net = who => ppl(trip, who).reduce((t, x) => t + x.net, 0);
+  check('pairs add up to the balance: R receives 100', net('R'), 100);
+  check('pairs add up to the balance: S pays 60', net('S'), -60);
+  check('pairs add up to the balance: L pays 40', net('L'), -40);
+  const r = ppl(trip, 'R');
+  check('R/S: S still owes 70 after the dinner cancels 30', r[0].net, 70);
+  check('R/L: L owes 30 after the taxi and the 50 paid', r[1].net, 30);
+  check('Sam\'s dinner is settled for R (cancelled out)', r[0].bItems[0].left, 0);
+  check('the hotel is partly settled: 100 of 200 left', r[0].aItems[0].left + r[1].aItems[0].left, 100);
   const render = extractFn('renderProjects');
   check('Add a section waits for 3 trackers', /\.length>=3\|\|/.test(render), true);
 })();
@@ -2994,20 +3024,13 @@ section('A non-owner is not offered the owner-only controls (11 Sep 2026)');
     /canAdminHere\(/.test(extractFn('doSettleReset')), true);
   /* Splitting costs / Just tracking rewrites what the group MEANS for every
      member at once, so it is owner-only too — not merely editor-writable. */
-  check('the Splitting / Just tracking toggle is behind the admin predicate',
-    guardsLabel(render, 'Splitting costs', 600), true);
-  check('toggleSettleMode still refuses a non-owner behind the hidden control',
+  // v118 (Rachel, 24 Sep 2026): the toggle and Set Budget left the screen; both are set in Edit.
+  check('no Splitting / Just tracking toggle on the project screen', />Splitting costs</.test(render), false);
+  check('no Set Budget link on the project screen', /showEditBudget\(/.test(render), false);
+  check('toggleSettleMode still refuses a non-owner',
     /canAdminHere\(/.test(extractFn('toggleSettleMode')), true);
-  /* A MEMBER STILL GETS TO KNOW WHICH MODE THEY ARE IN. Hiding the control is
-     not the same as hiding the fact, so the caption is printed on both sides of
-     the branch. Proving that without naming the local it is held in: read the
-     name back OUT of the assignment, then count its uses. One write and two
-     reads means both branches print it; the caption text is quoted here only as
-     the anchor for finding the assignment, because string literals survive. */
-  const capt = /([\w$]+)\s*=\s*[\w$.]+\s*\?\s*["']Tracking spending only/.exec(render) || [];
-  check('the mode caption is computed once, into one local', !!capt[1], true);
-  check('and both branches — toggle and no toggle — print it',
-    capt[1] ? (render.split(capt[1]).length - 1) >= 3 : false, true);
+  check('the project form carries the budget', /id="pfBudget"/.test(src) && /pfBudget/.test(extractFn('saveProjectForm')), true);
+  check('and still carries Split costs / Just track', /setPfSettle\(.track.\)/.test(src), true);
 })();
 
 /* ---- "Invite someone" with nobody left to invite -------------------------
@@ -3505,14 +3528,14 @@ section('A live join code never leaves the owner');
   check('an expired code is not carried forward', (stale.pendingInvites || []).length, 0);
 })();
 
-section('Team Details opens closed on a group project');
+section('Per-Person Breakdown opens closed on a group project');
 /* Rachel, 10 Sep 2026: five person cards sat open under Settle Up and pushed
    the history a screen and a half down. "Team", not "Member", because on a
    SHARED group project "member" already means someone with access to the
    ledger, which is a different set of people from the trip's participants. */
 (function () {
   const rpd = extractFn('renderProjectDetail');
-  check('the section is named Team Details', rpd.indexOf('Team Details') >= 0, true);
+  check('the section is named Per-Person Breakdown', rpd.indexOf('Per-Person Breakdown') >= 0, true);
   check('the old always-open People heading is gone', rpd.indexOf('>People<') >= 0, false);
   // v116: every project section is drawn by projSectionHtml; Team starts closed.
   check('it is a control, not a label', /projSectionHtml\([\w$]+,.team./.test(rpd), true);
@@ -3521,7 +3544,8 @@ section('Team Details opens closed on a group project');
   check('the collapsed state is not persisted to the project',
     extractFn('togglePeopleDetails').indexOf('saveProject') >= 0, false);
   check('the row still says how many people are in there',
-    /.Team Details.,[\w$]+\.length/.test(rpd), true);
+    /.Per-Person Breakdown.,[\w$]+\.length/.test(rpd), true);
+  check('Spending Categories heading', /.Spending Categories./.test(rpd), true);
   const sec = extractFn('projSectionHtml');
   check('sections share the History heading', /history-header/.test(sec) && /history-toggle/.test(sec) && /group-count/.test(sec), true);
   ['settle', 'cats'].forEach(function (k) {
@@ -4960,8 +4984,8 @@ section('A lending circle can be paid down a bit at a time');
      meant Rachel PAID; in Settle Up the same arrow means Rachel OWES. */
   const rowBlock = (render.match(/const line=[\s\S]{0,400}/) || [''])[0];
   check('and the log row carries no arrow at all', /→/.test(rowBlock), false);
-  check('while Settle Up keeps its arrow, where it is an instruction',
-    /→/.test(render), true);
+  check('Settle Up says "to pay", no arrow (24 Sep 2026)',
+    />→</.test(render) === false && />to pay</.test(render), true);
   /* STRINGS AND SHAPES ONLY. `h` is a local the minifier renames and terser
      rewrites every single quote as a double one. */
   check('the history shows repayments too',
