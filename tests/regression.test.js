@@ -2322,7 +2322,8 @@ section('v116 tracker Menu and wording');
   const ppb = extractFn('perPersonBreakdownHtml');
   // 24 Sep 2026 (tester suggestion): one card per person; + owed back, - their share, = net.
   check('breakdown: one folding card per person, closed', /<details class="pp-table">/.test(ppb) && !/pp-table" open/.test(ppb), true);
-  check('breakdown: the two folding rows', /Owed back to /.test(ppb) && /’s share /.test(ppb) && /pp-part/.test(ppb), true);
+  check('breakdown: both rows start with Transactions', /Transactions paid by .\+[\w$]+\+/.test(ppb) && /Transactions paid by others/.test(ppb) && /pp-part/.test(ppb), true);
+  check('breakdown: no settlements row, only open amounts', !/Settlements/.test(ppb) && /left>0?\.01/.test(ppb.replace(/\s/g,'')), true);
   check('breakdown: then the net', /Net to pay/.test(ppb) && /Net to receive/.test(ppb), true);
   check('breakdown: blue person icons', /\.pp-ico\{[^}]*#2f6fce/.test(src), true);
   // v127 (24 Sep 2026)
@@ -2352,7 +2353,7 @@ section('v116 tracker Menu and wording');
   check('net: S nets -75', ppn(ski, 'S').net, -75);
   check('net: D nets -55', ppn(ski, 'D').net, -55);
   check('breakdown: a folding table per payer, closed by default', /<details class="pp-table">/.test(ppb) && !/pp-table" open/.test(ppb), true);
-  check('breakdown: tables are headed by the name, not "paid by you"', /Transactions paid by (you|.\+)/.test(ppb), false);
+  check('breakdown: never "paid by you"', /Transactions paid by you/.test(ppb), false);
   check('breakdown: a person icon on every table and net card', (ppb.match(/[\w$]+\+\s*.<span class="pp-who">/g) || []).length >= 2 && /pp-ico/.test(ppb), true);
   check('breakdown: no "You" in place of a name', /'You'/.test(ppb), false);
   check('breakdown: someone who paid nothing still gets a card', /Nothing paid yet/.test(ppb) && !/if\(![\w$]+\.length\)return;/.test(ppb), true);
@@ -2394,6 +2395,11 @@ section('v116 tracker Menu and wording');
   check('R/L: L owes 30 after the taxi and the 50 paid', r[1].net, 30);
   check('Sam\'s dinner is settled for R (cancelled out)', r[0].bItems[0].left, 0);
   check('the hotel is partly settled: 100 of 200 left', r[0].aItems[0].left + r[1].aItems[0].left, 100);
+  // v129: the breakdown rows show these open amounts; they net to the balance
+  const openNet = L => L.reduce((t, x) => t + Math.max(0, x.net), 0) - L.reduce((t, x) => t + Math.max(0, -x.net), 0);
+  check('open rows net to the balance: R', openNet(ppl(trip, 'R')), 100);
+  check('open rows net to the balance: S', openNet(ppl(trip, 'S')), -60);
+  check('open rows net to the balance: L', openNet(ppl(trip, 'L')), -40);
   const render = extractFn('renderProjects');
   check('Add a section waits for 3 trackers', /\.length>=3\|\|/.test(render), true);
 })();
