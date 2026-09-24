@@ -323,13 +323,13 @@ near('A paid 100', r.paid.A, 100);
 transfers('settle-up (USD only)', r.transfers, [{ from: 'B', to: 'A', amount: 50 }]);
 
 section('Solo button labels — first person, direction-driven (paidBtnLabel)');
-check('I pay -> "I Paid"', paidBtnLabel({ direction: 'pay' }), 'I Paid');
-check('I earn -> "I Got Paid"', paidBtnLabel({ direction: 'earn' }), 'I Got Paid');
-check('missing direction defaults to pay', paidBtnLabel({}), 'I Paid');
+check('I pay -> "Log Payment"', paidBtnLabel({ direction: 'pay' }), 'Log Payment');
+check('I earn -> "Log Payment"', paidBtnLabel({ direction: 'earn' }), 'Log Payment');
+check('missing direction -> "Log Payment"', paidBtnLabel({}), 'Log Payment');
 
 section('Live-sharing: counterparty perspective flips the label');
-check('pay activity, other side', paidBtnLabel({ direction: 'pay' }, 'other'), 'I Got Paid');
-check('earn activity, other side', paidBtnLabel({ direction: 'earn' }, 'other'), 'I Paid');
+check('pay activity, other side sees the same button', paidBtnLabel({ direction: 'pay' }, 'other'), 'Log Payment');
+check('earn activity, other side sees the same button', paidBtnLabel({ direction: 'earn' }, 'other'), 'Log Payment');
 
 section('Neutral share naming - both parties named');
 check('pay: payer is me', payerName({ direction: 'pay', counterparty: 'Coach Mike' }), 'Rachel');
@@ -2007,14 +2007,18 @@ section('Project action buttons are instructions, not statements');
 (function () {
   const label = new Function('isPay',
     extractFn('paidBtnLabel') + '; return paidBtnLabel;')((p) => p.direction !== 'earn');
-  check('a paying project says Add Expense',
-    label({ type: 'project', direction: 'pay' }), 'Add Expense');
-  check('an earning project says Received Payment',
-    label({ type: 'project', direction: 'earn' }), 'Received Payment');
-  check('an activity keeps I Paid', label({ type: 'hourly', direction: 'pay' }), 'I Paid');
-  check('an activity keeps I Got Paid', label({ type: 'hourly', direction: 'earn' }), 'I Got Paid');
-  check('the counterparty view of an activity is unchanged',
-    label({ type: 'hourly', direction: 'pay' }, 'them'), 'I Got Paid');
+  check('a paying project says Log Payment',
+    label({ type: 'project', direction: 'pay' }), 'Log Payment');
+  check('an earning project says Log Received Payment',
+    label({ type: 'project', direction: 'earn' }), 'Log Received Payment');
+  check('a paying activity says Log Payment', label({ type: 'hourly', direction: 'pay' }), 'Log Payment');
+  check('an earning activity says Log Payment', label({ type: 'hourly', direction: 'earn' }), 'Log Payment');
+  check('the counterparty sees the same Log Payment',
+    label({ type: 'hourly', direction: 'pay' }, 'them'), 'Log Payment');
+  check('v116: no Add Expense / Add Settlement buttons left',
+    /> Add Expense<|['"] Add Settlement</.test(src), false);
+  check('v116: Log Expense and Log Settlement',
+    /> Log Expense</.test(src) && /['"] Log Settlement</.test(src), true);
   // The icon is the other half of the affordance: + is what the app uses for
   // "add one of these", and $ read as a currency label.
   check('the project button carries the add glyph',
@@ -2188,12 +2192,9 @@ section('Invite is a header button next to Edit and Remove');
 section('Categorize is a tool, not a leaflet');
 (function () {
   const hint = extractFn('showCategorizeExpenses');
-  check('category examples: build categories present',
-    /Materials/.test(hint) && /Woodwork/.test(hint) && /Appliances/.test(hint), true);
-  check('category examples: trip categories present',
-    /Flights/.test(hint) && /Hotels/.test(hint) && /Meals/.test(hint) && /Transport/.test(hint), true);
-  check('category examples: rental categories present',
-    /Rent/.test(hint) && /Maintenance/.test(hint) && /Bills/.test(hint), true);
+  // v116 (Rachel, 24 Sep 2026): no introductory text, the dialog opens on the categories.
+  check('categorize: no intro paragraph', /Pick a category or name a new one, tick/.test(hint), false);
+  check('categorize: no example list', /Woodwork/.test(hint), false);
   check('category examples: Utilities dropped', /Utilities/.test(hint), false);
   check('category examples: Cleaning dropped', /Cleaning/.test(hint), false);
 
@@ -2273,6 +2274,42 @@ section('Income categories');
     uncategorizedEntries(p).some(h => h.type === 'settlement'), false);
   check('uncategorized: empties once everything is tagged',
     uncategorizedEntries({ history: [{ type: 'charge', costItem: 'Bills' }] }).length, 0);
+  // v116: in a group every payment is a Log Settlement, never categorizable.
+  const grp = { participants: ['A', 'B'], history: [
+    { id: 'e', type: 'charge', amount: 10, paidBy: 'A' },
+    { id: 's', type: 'payment', amount: 5, from: 'B', to: 'A' },
+    { id: 't', type: 'payment', amount: 5 } ] };
+  check('uncategorized: a group offers only its expenses',
+    uncategorizedEntries(grp).map(h => h.id).join(','), 'e');
+  check('uncategorized: a from/to payment is a settlement anywhere',
+    uncategorizedEntries({ history: [{ id: 'x', type: 'payment', from: 'A', to: 'B' }] }).length, 0);
+})();
+
+/* ---- v116 (Rachel, 24 Sep 2026): tracker Menu, Transaction History, Add a section ---- */
+section('v116 tracker Menu and wording');
+(function () {
+  check('Transaction History, singular', /Transactions History/.test(src), false);
+  ['projMenuItems', 'detailMenuItems', 'lendMenuItems'].forEach(function (id) {
+    check(id + ' is opened from a header Menu button',
+      new RegExp('showTrackerMenu\\([\'"]' + id + '[\'"]\\)[\'"]>Menu<').test(src), true);
+  });
+  check('nothing sits under History any more', /hist-tools/.test(src), false);
+  const html = src.slice(src.indexOf('id="detailMenuItems"'), src.indexOf('</div>', src.indexOf('id="detailMenuItems"')));
+  ['oneOffToggle', 'settleResetBtn', 'detailShareBtn', 'detailExportBtn', 'detailClearBtn'].forEach(function (id) {
+    check('activity Menu holds ' + id, html.indexOf('id="' + id + '"') >= 0, true);
+  });
+  ['proj', 'detail', 'lend'].forEach(function (k) {
+    const box = src.slice(src.indexOf('id="' + k + 'MenuItems"'), src.indexOf('</div>', src.indexOf('id="' + k + 'MenuItems"')));
+    check(k + ': Edit and Delete live in the Menu',
+      box.indexOf('id="' + k + 'EditBtn"') >= 0 && box.indexOf('id="' + k + 'RemoveBtn"') >= 0, true);
+    check(k + ': Delete is set apart in red', /RemoveBtn" data-danger/.test(box), true);
+  });
+  check('the header no longer carries Edit or Delete', /header-act-btn[^>]*>(Edit|Delete)</.test(src), false);
+  const menu = extractFn('showTrackerMenu');
+  check('Menu honours what the role lockdown hid', /display!==.none./.test(menu), true);
+  check('Clear All is set apart in red', /data-danger|dataset\.danger/.test(src) && /menu-sep/.test(menu), true);
+  const render = extractFn('renderProjects');
+  check('Add a section waits for 3 trackers', /\.length>=3\|\|/.test(render), true);
 })();
 
 /* ---- Deleting an EXPENSE category must not blank an INCOME entry ----
@@ -2321,8 +2358,9 @@ section('Settled group trip still reports what the trip cost');
   check('hasSettlement: true once settled', hasSettlement(trip), true);
   check('hasSettlement: false before any settle-up',
     hasSettlement({ history: [{ type: 'charge' }] }), false);
-  check('the dashboard shows what is still owed as its own figure',
-    /Outstanding<\/div>/.test(src), true);
+  // v116 (Rachel, 24 Sep 2026): Outstanding removed, headline reads Total Paid.
+  check('the group dashboard no longer shows Outstanding', /Outstanding<\/div>/.test(src), false);
+  check('the group dashboard headline is Total Paid', /balance-label">Total Paid</.test(src), true);
   check('each person can see their own trip total', /Own share/.test(src), true);
 })();
 
@@ -2642,7 +2680,7 @@ section('The coach sees his own side of a shared one-to-one ledger');
   check('to Rachel it still reads as paying', SH.isPay(asRachel), true);
   check('Mike sees Rachel as the payer', SH.payerName(asMike), 'Rachel');
   check('Mike sees himself as the receiver', SH.receiverName(asMike), 'Mike');
-  check('Mike’s button reads "I Got Paid"', SH.paidBtnLabel(asMike), 'I Got Paid');
+  check('Mike’s button reads "Log Payment" too', SH.paidBtnLabel(asMike), 'Log Payment');
   check('the other side is the ledger owner, not the typed counterparty',
     SH.otherName(asMike), 'Rachel');
   // A split has no "you" and "them", so a group is never flipped.
