@@ -2330,10 +2330,14 @@ section('v116 tracker Menu and wording');
   check('breakdown: someone who paid nothing still gets a card', /Nothing paid yet/.test(ppb) && !/if\(![\w$]+\.length\)return;/.test(ppb), true);
   check('breakdown: outstanding is green for every payer, not only the viewer', /pp-foot.\+\([\w$]+>\.?0?\.01\?/.test(ppb) && !/&&mine/.test(ppb), true);
   check('breakdown: total rows on light blue', /\.pp-foot\{[^}]*rgba\(47,111,206/.test(src) && /\.pp-net-total\{[^}]*rgba\(47,111,206/.test(src), true);
-  check('home: each Create new button is dark blue, not the whole box', /\.create-zone \.act-btn\{[^}]*#1d3557/.test(src) && !/\.create-zone\{[^}]*#1d3557/.test(src), true);
+  // 24 Sep 2026 (tester): the create buttons must sit inside a frame. Light blue frame, white buttons, folds open by default.
+  check('home: Create new is a light-blue frame again', /\.create-zone\{[^}]*rgba\(47,111,206,\.08\)/.test(src) && !/\.create-zone \.act-btn\{[^}]*#1d3557/.test(src), true);
+  check('home: Create new folds and starts open', /toggleCreateZone\(/.test(extractFn('homeActionsHtml')) && /collapsedGroups\[.__create__.\]/.test(extractFn('homeActionsHtml')), true);
+  check('settings: reminders are one switch and one line', /When turned on, you/.test(extractFn('renderNotifSettings')) && !/Remind me to log sessions/.test(extractFn('renderNotifSettings')) && !/_reminderTimingCopy\(\)/.test(extractFn('renderNotifSettings')), true);
+  check('settings: the iPhone app draws the same', /When turned on, you/.test(extractFn('_renderNotifSettingsNative')), true);
   check('breakdown: net cards fold by name like Who paid what', /<details class="pp-table pp-net">/.test(ppb) && !/pp-net" open/.test(ppb), true);
   check('breakdown: sub-title reads Transactions paid by each person', />Transactions paid by each person</.test(ppb) && !/>Who paid what</.test(ppb), true);
-  check('home: create icons sit on white', /\.create-zone \.act-pic\.blue[,{][^}]*background:#fff\}/.test(src) && /\.create-zone \.act-pic\.green[,{][^}]*background:#fff\}/.test(src), true);
+  check('home: create icons keep their own tints again', /\.create-zone \.act-pic/.test(src) === false, true);
   check('home: an empty section says how to fill it', /Press and hold any tracker, then drag it here/.test(extractFn('renderProjects')), true);
   check('home: naming a new section shows the drag arrow', /maybeShowDragHint\(\)/.test(extractFn('commitRenameSection')) && /coachShow\(/.test(extractFn('maybeShowDragHint')), true);
   check('home: invite line breaks before Enter it here', /Got a code from someone\?<br>Enter it here/.test(src), true);
