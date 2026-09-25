@@ -2399,13 +2399,24 @@ section('v116 tracker Menu and wording');
   check('history opens again every time a tracker is opened', /delete _histOpen\[/.test(extractFn('openProject')), true);
   check('invite pick: no explanation under the title', /Each person gets their own code/.test(src), false);
   check('analytics: report date on top', /as-date/.test(extractFn('adminStatsHtml')), true);
-  check('analytics: Save PDF prints only the report, dated file name', /window\.print\(\)/.test(extractFn('saveAdminStatsPdf')) && /Tally analytics /.test(extractFn('saveAdminStatsPdf')) && /print-admin body>\*?:not\(#adminStatsView\)/.test(src), true);
+  check('analytics: Email opens the mail app to the admin, dated subject', /mailto:/.test(extractFn('emailAdminStats')) && /ADMIN_EMAIL/.test(extractFn('emailAdminStats')) && /Tally analytics /.test(extractFn('emailAdminStats')), true);
+  check('analytics: the email body is the whole report as text', /INSTALLS|Installs: /.test(extractFn('adminStatsText')) && /TRANSACTIONS/.test(extractFn('adminStatsText')) && /Money lent/.test(extractFn('adminStatsText')), true);
+  check('analytics: no Save PDF (print does nothing in the iPhone app)', /saveAdminStatsPdf|window\.print\(\)\}catch/.test(src), false);
   check('home: invite icon sized like the emoji', /inv-pic"><svg width="25" height="25"/.test(src), true);
   check('guests see the invite card (not only signed-in users)', /invitesCardVisible\(\)/.test(extractFn('homeActionsHtml')) && /isGuestSession\(\)/.test(extractFn('invitesCardVisible')), true);
   check('a guest tapping it is asked to sign in', /showInvitesSignInPrompt\(\)/.test(extractFn('tapHomeInvites')) && /Sign in to open invites/.test(extractFn('showInvitesSignInPrompt')), true);
   check('signing in from there remembers to come back (survives a reload)', /localStorage\.setItem\(AFTER_SIGNIN_INVITES_KEY/.test(extractFn('invitesSignIn')), true);
   check('after sign-in the app opens Access your invites', /openAccessInvites\(\)/.test(extractFn('maybeResumeInvitesAfterSignIn')) && /maybeResumeInvitesAfterSignIn\(\)/.test(extractFn('startApp')), true);
   check('the come-back note expires', /30\*(60000|6e4)/.test(extractFn('maybeResumeInvitesAfterSignIn')), true);
+  check('home card: Money lent is written once', /Money lent · \$\{/.test(src), false);
+  check('arrows: a tap never presses what is highlighted', /\.click\(\)/.test(extractFn('coachShow')), false);
+  check('arrows: never shown on top of a popup', /overlayOpen\(\)/.test(extractFn('coachShow')), true);
+  check('arrows: a popup opening ends them', /_coach&&overlayOpen\(\)\)coachEnd\(\)/.test(src), true);
+  check('arrows: a skipped hint is not marked as seen', /===false\)return/.test(extractFn('maybeCoachFirstCard')), true);
+  check('lending form: "loaned", not "paid for"', />loaned<\/span><select class="form-select" id="lendTo"/.test(src), true);
+  check('join: one step - no confirm card, no name to correct', /showJoinConfirm|joinAsName/.test(src), false);
+  check('join: the Join button joins straight away', /confirmJoin\(\)/.test(extractAsyncFn('submitJoinCode')), true);
+  check('join screen: no explanation text', /Enter the six-character code from their message|joinSignInWarn/.test(src), false);
   check('home: invite tile is not a dark solid block', /act-pic\.violet/.test(src), false);
   check('home: invite card reads like a create button', /act-title">Got a code from someone\?<\/span><span class="act-sub">Enter it here/.test(src), true);
   check('no "Tap a person" hint', /Tap a person to see/.test(rpd4), false);
@@ -5079,7 +5090,7 @@ section('A lending circle can be paid down a bit at a time');
 
   /* ---- what the rows SAY, which is the half she actually reported ---- */
   const render = extractFn('renderLendingDetail');
-  check('a loan reads as words, not an arrow', /paid for/.test(render), true);
+  check('a loan reads as words, not an arrow: "loaned"', /loaned/.test(render) && !/paid for \$\{/.test(render), true);
   check('a repayment says what it is', /repaid/.test(render), true);
   /* THE ARROW MEANT TWO THINGS ONE SCREEN APART: in the log "Rachel -> Diana"
      meant Rachel PAID; in Settle Up the same arrow means Rachel OWES. */
