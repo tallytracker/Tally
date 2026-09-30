@@ -2771,11 +2771,12 @@ var SH = (function () {
     extractFn('_slotKey'),
     extractFn('ownerParticipantSlot'),
     extractFn('openParticipantSlots'),
+    extractFn('inviteKind'),
     extractFn('invitableSlots'),
     'return {_flipView,isPay,otherName,payerName,receiverName,paidBtnLabel,balLabel,reconcileLedgerHistory,' +
     'isShared,ledgerRole,canEditLedger,isLedgerOwner,canAdminLedger,ledgerDataOf,stubOf,' +
     'canWriteEntries,requireEditRights,entryRowAttrs,__setMeta,__setName,' +
-    'ownerParticipantSlot,openParticipantSlots,invitableSlots,' +
+    'ownerParticipantSlot,openParticipantSlots,invitableSlots,inviteKind,' +
     'normalizeJoinCode,isWellFormedCode,mergeProjectPair};'
   ].join('\n');
   return new Function('settings', 'cur', 'rd2', on)({ name: 'Mike' }, function () { return '$'; }, function (n) { return n; });
@@ -2891,7 +2892,7 @@ section('Sharing is always an invite, and it says what it is');
     extractFn('buildInviteMessage').indexOf('join code') < extractFn('buildInviteMessage').indexOf('PLAY_URL'), true);
   check('the message carries the balance, labelled', /📌 Current Balance: /.test(src), true);
   check('the balance is stamped as of today', /as of today\./.test(src), true);
-  check('the message carries a join code', /Use the following join code: \*/.test(src), true);
+  check('the message carries a join code', /\*Use the following join code: /.test(src), true);
   /* QUOTES ARE NOT PART OF THE CODE. terser rewrites every single-quoted
      string as double-quoted, so a check that spells the quote passes on the
      master and fails on the shipped file — which is the whole point of running
@@ -2907,6 +2908,7 @@ section('Sharing is always an invite, and it says what it is');
     /Tap here to auto-fill your code/.test(src), false);
   check('the message has no how-to-join line (kept short)',
     /Access Your Invites\* on the home screen|choose \*I have a join code\*/.test(extractFn('buildInviteMessage')), false);
+  check('the join-code line is bold as a whole', /\*Use the following join code: .\+[\w$]+\+.\*/.test(extractFn('buildInviteMessage')), true);
   check('the message ends on the store links', /APPSTORE_URL;/.test(extractFn('buildInviteMessage')), true);
   check('the message still points a new user at the download',
     /Download Tally on:/.test(src) && !/Get Tally free/.test(src), true);
@@ -3224,8 +3226,20 @@ section('Every participant slot is accounted for, including the owner\'s');
   SH.__setMeta('L9', { members: {} });
   check('and neither can your own',
     SH.invitableSlots(P(['Rachel', 'Sabine'])).join(','), 'Sabine');
-  check('a group with no named participants is never full',
-    SH.invitableSlots(P([])), null);
+  /* v145 (Rachel, 30 Sep 2026): only the people the tracker is about can be invited. */
+  check('a tracker that names nobody cannot invite anyone',
+    SH.invitableSlots(P([])).length, 0);
+  SH.__setMeta('L9', { ownerUid: 'o', members: { o: { name: 'Rachel', role: 'owner' } } });
+  check('an activity can invite its counterparty',
+    SH.invitableSlots(Object.assign(P([]), { counterparty: 'Rita' })).join(','), 'Rita');
+  SH.__setMeta('L9', { ownerUid: 'o', members: { o: { name: 'Rachel', role: 'owner' }, r: { name: 'Rita S', role: 'viewer' } } });
+  check('and nobody else once she is in', SH.invitableSlots(Object.assign(P([]), { counterparty: 'Rita' })).length, 0);
+  SH.__setMeta('L9', { members: {} });
+  check('which kind of invite each tracker allows',
+    [SH.inviteKind({ participants: ['A', 'B'] }), SH.inviteKind({ counterparty: 'Rita' }), SH.inviteKind({ counterparty: ' ' })].join(','), 'participants,counterparty,none');
+  check('no Invite button where there is nobody to invite', /inviteKind\([\w$]+\)!==.none./.test(src), true);
+  check('the invite flow refuses a tracker that names nobody', /inviteKind\([\w$]+\)===.none./.test(extractFn('startInviteFlow')), true);
+  check('the role is still the owner\'s choice', /wizGo\(.irole.\)/.test(extractFn('wizOpenInvite')), true);
   SH.__setName('Mike');
   check('a waiting name in the picker is tappable and says a new code replaces the old',
     /Invited already · send a new code/.test(extractFn('wizInviteDrawScreen')) && /wizPickPerson\(/.test(extractFn('wizInviteDrawScreen')), true);
