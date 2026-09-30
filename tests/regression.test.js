@@ -2334,15 +2334,12 @@ section('v116 tracker Menu and wording');
   check('badge: the stub is the fallback before the ledger answers', lmc({})({ ledgerId: 'L', memberCount: 2 }), 2);
   check('badge: chip and dormant check both read the live count', /liveMemberCount\(/.test(extractFn('roleChipHtml')) && /liveMemberCount\(/.test(extractFn('isDormantLedger')), true);
   const ts = new Function(extractFn('tightSym') + '; return tightSym;')();
+  check('blue arrows on the person cards', /\.pp-table \.group-chevron\{[^}]*#2f6fce/.test(src), true);
   check('breakdown tables use $ not USD', ts('USD '), '$');
   check('a symbol stays a symbol', ts('$'), '$');
   check('each person\'s cost shows under the dashboard', /personCostsHtml\(/.test(extractFn('renderProjectDetail')) && /entryShareOf\(/.test(extractFn('personCostsHtml')), true);
   check('each person\'s cost is rounded to whole numbers', /Math\.round\(/.test(extractFn('personCostsHtml')), true);
-  const hah = extractFn('homeActionsHtml');
   check('breakdown tables: one grid per table so numbers line up', /\.pp-g3\{grid-template-columns:minmax\(0,1fr\) auto auto auto\}/.test(src) && /pp-grid pp-g3/.test(extractFn('perPersonBreakdownHtml')) && /pp-grid pp-g2/.test(extractFn('perPersonBreakdownHtml')), true);
-  check('trip button says event, not party', /renovation, event/.test(hah) && !/party/.test(hah), true);
-  check('create icons: one emoji each, no badges (house for trips)', /act-pic[^>]*>🧘</.test(hah) && /act-pic[^>]*>🏠</.test(hah) && /act-pic[^>]*>🤝</.test(hah) && !/act-badge/.test(hah), true);
-  check('blue arrows on Create new and the person cards', /\.create-zone-title \.group-chevron,\.pp-table \.group-chevron\{[^}]*#2f6fce/.test(src), true);
   // Admin analytics (24 Sep 2026): the door is hidden for everyone else; the lock is on the server.
   check('admin: only the admin email opens analytics', /mabelrach9@gmail\.com/.test(src) && /isAnonymous/.test(extractFn('isAdminUser')), true);
   check('admin: the card is synced on Settings and on sign-in changes', /syncAdminCard\(\)/.test(extractFn('openSettings')) && /syncAdminCard\(\)/.test(extractFn('renderAuthCard')), true);
@@ -2354,7 +2351,6 @@ section('v116 tracker Menu and wording');
   check('inside a tracker: ONE badge that opens the members table', /roleChipHtml\(/.test(extractFn('sharedMarkHtml')) && /showLedgerMembers\(\)/.test(extractFn('sharedMarkHtml')) && (src.match(/innerHTML=sharedMarkHtml\([\w$]+\)[;,}]/g) || []).length === 3, true);
   check('join screen: no letters-and-numbers hint', /six of them/.test(src), false);
   check('menu items look like buttons (bordered, rounded)', /\.menu-row\{[^}]*border:1px solid[^}]*border-radius:10px/.test(src), true);
-  check('home: invites get the Create new frame and fold', /invites-zone/.test(extractFn('homeActionsHtml')) && /toggleZone\(this,.__zone_invites__.\)/.test(extractFn('homeActionsHtml')), true);
   const ppn = new Function('rd2', 'amtMain', 'entryShareOf', 'getEntriesSinceLastSettlement',
     extractFn('perPersonNet') + '; return perPersonNet;')(
     x => Math.round(x * 100) / 100, (p, h) => h.amount,
@@ -2377,23 +2373,10 @@ section('v116 tracker Menu and wording');
   check('breakdown: no "You" in place of a name', /'You'/.test(ppb), false);
   check('breakdown: someone who paid nothing still gets a card', /Nothing paid yet/.test(ppb) && !/if\(![\w$]+\.length\)return;/.test(ppb), true);
   // 24 Sep 2026 (tester): the create buttons must sit inside a frame. Light blue frame, white buttons, folds open by default.
-  check('home: Create new is a light-blue frame again', /\.create-zone\{[^}]*rgba\(47,111,206,\.08\)/.test(src) && !/\.create-zone \.act-btn\{[^}]*#1d3557/.test(src), true);
-  check('home: Create new folds and starts open', /toggleCreateZone\(/.test(extractFn('homeActionsHtml')) && /zoneCollapsed\(.__zone_create__.\)/.test(extractFn('homeActionsHtml')), true);
-  (function(){
-    const zc = new Function('projects','collapsedGroups','ZONE_FOLD_AFTER', 'return (' + extractFn('zoneCollapsed') + ')');
-    check('zones: open for a newcomer (0 trackers)', zc([], {}, 2)('__zone_create__'), false);
-    check('zones: still open with 1 tracker', zc([{}], {}, 2)('__zone_create__'), false);
-    check('zones: folded from 2 trackers', zc([{},{}], {}, 2)('__zone_invites__'), true);
-    check('zones: the user unfolding wins', zc([{},{},{}], {__zone_create__:false}, 2)('__zone_create__'), false);
-    check('zones: the user folding wins', zc([], {__zone_create__:true}, 2)('__zone_create__'), true);
-    check('zones: fold threshold is 2', /ZONE_FOLD_AFTER=2/.test(src), true);
-  })();
   check('settings: reminders are one switch and one line', /When turned on, you/.test(extractFn('renderNotifSettings')) && !/Remind me to log sessions/.test(extractFn('renderNotifSettings')) && !/_reminderTimingCopy\(\)/.test(extractFn('renderNotifSettings')), true);
   check('settings: the iPhone app draws the same', /When turned on, you/.test(extractFn('_renderNotifSettingsNative')), true);
-  check('home: create icons keep their own tints again', /\.create-zone \.act-pic/.test(src) === false, true);
   check('home: an empty section says how to fill it', /Press and hold any tracker, then drag it here/.test(extractFn('renderProjects')), true);
   check('home: naming a new section shows the drag arrow', /maybeShowDragHint\(\)/.test(extractFn('commitRenameSection')) && /coachShow\(/.test(extractFn('maybeShowDragHint')), true);
-  check('home: invite card has a drawn envelope on the peach tile like the create buttons', /id="homeInvitesBtn"[^>]*><span class="act-pic inv-pic"><svg/.test(src) && /stroke="#2F6FD0"/.test(src) && /stroke="#E67E22"/.test(src), true);
   check('lending: Settle All & Reset lives in the Menu', /id="lendMenuItems" hidden>[\s\S]{0,400}id="lendSettleBtn"/.test(src) && !/btn-settle" id="lendSettleBtn"/.test(src), true);
   check('lending: Log Loan / Log Repayment', /> Log Loan/.test(src) && /> Log Repayment/.test(src) && !/> Add Loan/.test(src) && !/> Add Repayment/.test(src), true);
   check('history opens again every time a tracker is opened', /delete _histOpen\[/.test(extractFn('openProject')), true);
@@ -2402,23 +2385,17 @@ section('v116 tracker Menu and wording');
   check('analytics: Email opens the mail app to the admin, dated subject', /mailto:/.test(extractFn('emailAdminStats')) && /ADMIN_EMAIL/.test(extractFn('emailAdminStats')) && /Tally analytics /.test(extractFn('emailAdminStats')), true);
   check('analytics: the email body is the whole report as text', /INSTALLS|Installs: /.test(extractFn('adminStatsText')) && /TRANSACTIONS/.test(extractFn('adminStatsText')) && /Money lent/.test(extractFn('adminStatsText')), true);
   check('analytics: no Save PDF (print does nothing in the iPhone app)', /saveAdminStatsPdf|window\.print\(\)\}catch/.test(src), false);
-  check('home: invite icon sized like the emoji', /inv-pic"><svg width="25" height="25"/.test(src), true);
-  check('guests see the invite card (not only signed-in users)', /invitesCardVisible\(\)/.test(extractFn('homeActionsHtml')) && /isGuestSession\(\)/.test(extractFn('invitesCardVisible')), true);
-  check('a guest tapping it is asked to sign in', /showInvitesSignInPrompt\(\)/.test(extractFn('tapHomeInvites')) && /Sign in to open invites/.test(extractFn('showInvitesSignInPrompt')), true);
-  check('signing in from there remembers to come back (survives a reload)', /localStorage\.setItem\(AFTER_SIGNIN_INVITES_KEY/.test(extractFn('invitesSignIn')), true);
   check('after sign-in the app opens Access your invites', /openAccessInvites\(\)/.test(extractFn('maybeResumeInvitesAfterSignIn')) && /maybeResumeInvitesAfterSignIn\(\)/.test(extractFn('startApp')), true);
   check('the come-back note expires', /30\*(60000|6e4)/.test(extractFn('maybeResumeInvitesAfterSignIn')), true);
   check('home card: Money lent is written once', /Money lent · \$\{/.test(src), false);
   check('arrows: a tap never presses what is highlighted', /\.click\(\)/.test(extractFn('coachShow')), false);
   check('arrows: never shown on top of a popup', /overlayOpen\(\)/.test(extractFn('coachShow')), true);
   check('arrows: a popup opening ends them', /_coach&&overlayOpen\(\)\)coachEnd\(\)/.test(src), true);
-  check('arrows: a skipped hint is not marked as seen', /===false\)return/.test(extractFn('maybeCoachFirstCard')), true);
   check('lending form: "loaned", not "paid for"', />loaned<\/span><select class="form-select" id="lendTo"/.test(src), true);
   check('join: one step - no confirm card, no name to correct', /showJoinConfirm|joinAsName/.test(src), false);
   check('join: the Join button joins straight away', /confirmJoin\(\)/.test(extractAsyncFn('submitJoinCode')), true);
   check('join screen: no explanation text', /Enter the six-character code from their message|joinSignInWarn/.test(src), false);
   check('home: invite tile is not a dark solid block', /act-pic\.violet/.test(src), false);
-  check('home: invite card reads like a create button', /act-title">Got a code from someone\?<\/span><span class="act-sub">Enter it here/.test(src), true);
   check('no "Tap a person" hint', /Tap a person to see/.test(rpd4), false);
   check('no "Tap an entry to edit" hint', /Tap an entry to edit/.test(src), false);
   check('order: Categories, Per-Person Breakdown, then Fastest way', /Per-Person Breakdown.,[^;]*\)\+[\w$]+[;}]/.test(rpd4) && /Spending Categories.,[\s\S]*?projCategoryRollups.\)\.innerHTML=([\w$]+)\+/.test(rpd4), true);
@@ -3921,13 +3898,11 @@ section('Sections are edited where they are');
    tapping its name. */
 (function () {
   const render = extractFn('renderProjects');
-  const actions = extractFn('homeActionsHtml');
+  const actions = extractFn('renderProjects');
 
   /* ---- what went ---- */
   check('the home screen no longer offers a Section button',
     /act-badge slate/.test(actions), false);
-  check('and does not call the New Section dialog from there',
-    /openNewGroup/.test(actions), false);
   check('the per-section total is gone', /group-total/.test(src), false);
   check('so is the signed roll-up that fed it', /totalSigned/.test(src), false);
   check('but per-card figures still use userSignedValue',
@@ -5210,6 +5185,68 @@ section('Nothing disappears (23 Sep 2026)');
   check('the fold-back is re-asserted after the network waits',
     (extractAsyncFn('unshareLedger').match(/Object\.assign\(/g) || []).length >= 1, true);
   check('every push heals duplicates first', /healDuplicateProjects\([\w$]+\)[;,][\s\S]{0,700}projectsForCloud\(\)/.test(src), true);
+})();
+
+section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Sep 2026)');
+(function () {
+  /* sign-in: linking a guest keeps the uid, so the observer never fires */
+  check('every in-page link adopts the account', (src.match(/_afterLink\(\);showToast\(.Account linked!/g) || []).length, 4);
+  const adopt = extractAsyncFn('_adoptLinkedAccount');
+  check('adopting starts cloud sync and redraws the header', /startFirestoreSync\(/.test(adopt) && /updateSyncBadge\(\)/.test(adopt) && /renderAuthCard\(\)/.test(adopt), true);
+  check('adopting scopes the cache and folds the guest data in', /setCacheScope\(/.test(adopt) && /mergeLocalDataToCloud\(/.test(adopt), true);
+  check('adopting keeps the guest data even if an account switch blanks memory', /resetStateOnAccountSwitch\([\s\S]*projects=[\w$]+\.projects/.test(adopt), true);
+  check('adopting picks up a pending invite', /maybeResumeInvitesAfterSignIn\(\)/.test(adopt), true);
+
+  /* welcome */
+  check('welcome asks who it is for, then "Sign in below"', /A coach or trainer\?/.test(src) && /A tutor, or hiring tutors for your kids\?/.test(src) && /Sign in below:/.test(src), true);
+  check('welcome step 1 hides the old subtitle', /\.style\.display=.none./.test(extractFn('renderWelcome')), true);
+
+  /* home */
+  const rp = extractFn('renderProjects');
+  check('empty home is one big + that opens the wizard', /home-plus-big[^`]*onclick="wizOpen\(\)"/.test(rp), true);
+  check('the header + appears once there is something', /id="homePlusTop"[^>]*onclick="wizOpen\(\)"/.test(src) && /syncHomePlus\(false\)/.test(rp) && /syncHomePlus\(true\)/.test(rp), true);
+  check('no Create new zone or invites card on home', /create-zone|homeInvitesBtn|homeActionsHtml/.test(src), false);
+  check('no home-screen arrow tour', /homeTourSteps|maybeShowWalkthrough|maybeCoachFirstCard|maybeCoachFirstEntry/.test(src), false);
+
+  /* wizard flow */
+  const W = new Function('_wiz', extractFn('wizNextOf') + extractFn('wizValid') + '; return {n:wizNextOf,v:wizValid};');
+  const mk = d => W({ d: Object.assign({ people: ['Me'] }, d) });
+  check('wizard: join code branch', mk({ mode: 'join' }).n('start'), 'join');
+  check('wizard: scratch goes to "what"', mk({ mode: 'new' }).n('start'), 'what');
+  check('wizard: regular path', ['what', 'r1', 'r2', 'r3', 'r4'].map(x => mk({ kind: 'regular' }).n(x)).join(','), 'r1,r2,r3,r4,r5');
+  check('wizard: regular ends after reminders', mk({ kind: 'regular' }).n('r5'), '');
+  check('wizard: solo project path', ['what', 'p1', 'p2s', 'p3s'].map(x => mk({ kind: 'project', pmode: 'solo' }).n(x)).join(','), 'p1,p2s,p3s,p4');
+  check('wizard: group project path', ['p1', 'p2g', 'p3g'].map(x => mk({ kind: 'project', pmode: 'group' }).n(x)).join(','), 'p2g,p3g,p4');
+  check('wizard: money lent path', ['what', 'l1'].map(x => mk({ kind: 'lending' }).n(x)).join(','), 'l1,l2');
+  check('wizard: a name is required', mk({ name: '  ' }).v('r1') !== '', true);
+  check('wizard: who is required for sessions', mk({ name: 'P', who: '' }).v('r2') !== '', true);
+  check('wizard: a price is required', mk({ amt: '' }).v('r4') !== '', true);
+  check('wizard: custom rate needs the minutes', mk({ amt: '50', bill: 'customrate', min: '' }).v('r4') !== '', true);
+  check('wizard: a price of 0 is allowed', mk({ amt: '0', bill: 'fixed' }).v('r4'), '');
+  check('wizard: a group needs two people', mk({}).v('p2g') !== '' && mk({ people: ['Me', 'Sam'] }).v('p2g') === '', true);
+  check('wizard: the project "who" is optional', mk({ who: '' }).v('p3s'), '');
+  check('wizard: choice screens move on by themselves', /setTimeout\(/.test(extractFn('wizChoose')) && /wizGo\(wizNextOf\(/.test(extractFn('wizChoose')), true);
+  check('wizard: Back never loses typing', /wizSave\(\)/.test(extractFn('wizBack')), true);
+  const wc = extractFn('wizCreate');
+  check('wizard saves through the normal forms', /saveProject\(\)/.test(wc) && /saveProjectForm\(\)/.test(wc) && /saveLendingCircle\(\)/.test(wc), true);
+  check('wizard opens the new tracker and its tour', /openProject\([\w$]+\.id\)/.test(wc) && /scheduleTrackerTour\(/.test(wc), true);
+  check('wizard examples have pictures', /WIZ_EX=\{\s*regular:\[\[.🧘./.test(src) && /\[.✈️.,.Trip.\]/.test(src), true);
+  const wj = extractAsyncFn('wizJoin');
+  check('wizard join: a guest is asked to sign in and the code is kept', /AFTER_SIGNIN_CODE_KEY,[\w$]+\)/.test(wj) && /joinSignIn/.test(wj), true);
+  check('after sign-in the kept code joins straight away', /wizOpen\(.join.,[\w$]+\);wizJoin\(\)/.test(extractFn('maybeResumeInvitesAfterSignIn')), true);
+  check('wizard join waits for the account to be adopted', /_adoptPromise/.test(extractAsyncFn('wizSignIn')), true);
+  check('a join lands in the tracker with its tour', /scheduleTrackerTour\(/.test(extractAsyncFn('confirmJoin')) && /return true/.test(extractAsyncFn('confirmJoin')), true);
+
+  /* tracker tour: viewer gets no "add" arrow */
+  const el = { offsetParent: 1 };
+  const T = new Function('document', 'canWriteEntries', extractFn('_tourKind') + extractFn('trackerTourSteps') + '; return trackerTourSteps;');
+  const doc = { querySelector: () => ({ querySelector: () => el }) };
+  const own = T(doc, () => true)({ type: 'fixed' }), view = T(doc, () => false)({ type: 'fixed' });
+  check('tour: editor/owner sees dashboard, add, history, invite, menu, back', own.length, 6);
+  check('tour: viewer skips the add buttons', view.length === 5 && !view.some(x => /Add here/.test(x.text)), true);
+  check('tour: ends on the back button', /Back home/.test(own[own.length - 1].text), true);
+  check('tour: once per kind and role', /toursSeen/.test(extractFn('scheduleTrackerTour')) && /overlayOpen\(\)/.test(extractFn('scheduleTrackerTour')), true);
+  check('tour: empty targets are skipped', /getBoundingClientRect\(\)\.height>0/.test(extractFn('coachShow')), true);
 })();
 
 /* ============================ RESULTS ============================ */
