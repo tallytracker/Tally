@@ -5246,6 +5246,10 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   const wc = extractFn('wizCreate');
   check('wizard saves through the normal forms', /saveProject\(\)/.test(wc) && /saveProjectForm\(\)/.test(wc) && /saveLendingCircle\(\)/.test(wc), true);
   check('wizard opens the new tracker and its tour', /openProject\([\w$]+\.id\)/.test(wc) && /scheduleTrackerTour\(/.test(wc), true);
+  // v150 (Rachel, 30 Sep 2026): the popups are titled like their buttons, with a heading per section.
+  check('v150: expense popup says Log Expense', /Log Expense</.test(extractFn('showProjectExpenseInput')) && !/Add expense/.test(extractFn('showProjectExpenseInput')), true);
+  check('v150: settlement popup says Log Settlement', /Log Settlement</.test(extractFn('showProjectGroupPaymentInput')) && !/Add settlement/.test(extractFn('showProjectGroupPaymentInput')), true);
+  check('v150: expense popup has headed sections', (extractFn('showProjectExpenseInput').match(/lf-sec/g) || []).length >= 5, true);
   // v148 (Rachel, 30 Sep 2026): budgets hidden; categories are set up in the project wizard.
   (function () {
     const exN = (src.match(/project:\[(\[[^\]]*\],?)+\]/) || [''])[0].split('],[').length;
