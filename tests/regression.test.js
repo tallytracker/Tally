@@ -3677,7 +3677,8 @@ section('The invite message no longer calls a solo project a debt');
    Behavioural, not textual: every local in these functions is renamed by the
    minifier, so the assertions run the real code. */
 (function () {
-  const FIG = extractFn('hasTwoSidedBalance') + ';' + extractFn('isGoalMode') + ';' +
+  // v148: budgets are hidden (BUDGETS_ON false), so these run with the flag off.
+  const FIG = 'var BUDGETS_ON=false;' + extractFn('projBudget') + ';' + extractFn('hasTwoSidedBalance') + ';' + extractFn('isGoalMode') + ';' +
               extractFn('figuresHeader') + ';' + extractFn('soloFiguresBlock') + ';';
   const DEPS = ['cur', 'projSym', 'getEntriesSinceLastSettlement', 'amtMain', 'rd2',
                 'isPay', 'isMultiCur', 'hasOther', 'myName', 'otherName', 'payerName',
@@ -3718,15 +3719,16 @@ section('The invite message no longer calls a solo project a debt');
   check('it does not tell him he is owed anything', /owed/.test(line), false);
   check('it does not name 5900 as a debt', /Balance: you/.test(line), false);
   check('it says who paid, and how much', line.indexOf('Rachel paid: $5900') >= 0, true);
-  check('it carries the figure that matters', line.indexOf('Remaining to pay: $600') >= 0, true);
-  check('it still names the budget', line.indexOf('Budget: $6500') >= 0, true);
+  // v148 (Rachel, 30 Sep 2026): budgets are hidden, so a stored budget no longer shows in messages.
+  check('a hidden budget adds no remaining line', line.indexOf('Remaining to pay') >= 0, false);
+  check('a hidden budget is not named', line.indexOf('Budget:') >= 0, false);
 
   // THE GUARANTEE, not just the fix: the two messages carry the SAME block,
   // character for character, because they call the same function.
   check('the invite and the plain summary cannot disagree',
     summary(designer()).indexOf(solo(designer())) >= 0, true);
   check('and the plain summary still reads as it did',
-    summary(designer()).indexOf('Remaining to pay: $600') >= 0, true);
+    summary(designer()).indexOf('Rachel paid: $5900') >= 0 && summary(designer()).indexOf('Remaining to pay') < 0, true);
 
   // AN ACTIVITY KEEPS THE DEBT SENTENCE — it is correct there, and this is the
   // half a whitelist is for.
@@ -4863,6 +4865,8 @@ section('A category can be taken off again');
   const PICK_SRC = [
     'function esc(s){return String(s==null?"":s)}',
     extractFn('getUsedCategories'),
+    extractFn('declaredCats'),
+    extractFn('getPickerCategories'),
     extractFn('buildCategoryPicker'),
     'return buildCategoryPicker;'
   ].join('\n');
@@ -4905,6 +4909,7 @@ section('A category can be taken off again');
     'function renderProjectDetail(){_rendered++}',
     'var db={saveProject(){_saved++}};',
     extractFn('categorizedCount'),
+    extractFn('declaredCats'),
     extractFn('doRemoveAllCategories'),
     'return {get projects(){return projects},get toasts(){return _toasts},',
     ' get saved(){return _saved},categorizedCount:categorizedCount,',
@@ -5225,8 +5230,9 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('wizard: scratch goes to "what"', mk({ mode: 'new' }).n('start'), 'what');
   check('wizard: regular path', ['what', 'r1', 'r2', 'r3', 'r4'].map(x => mk({ kind: 'regular' }).n(x)).join(','), 'r1,r2,r3,r4,r5');
   check('wizard: regular ends after reminders', mk({ kind: 'regular' }).n('r5'), '');
-  check('wizard: solo project path', ['what', 'p1', 'p2s', 'p3s'].map(x => mk({ kind: 'project', pmode: 'solo' }).n(x)).join(','), 'p1,p2s,p3s,p4');
-  check('wizard: group project path', ['p1', 'p2g', 'p3g'].map(x => mk({ kind: 'project', pmode: 'group' }).n(x)).join(','), 'p2g,p3g,p4');
+  check('wizard: solo project path', ['what', 'p1', 'p2s', 'p3s'].map(x => mk({ kind: 'project', pmode: 'solo' }).n(x)).join(','), 'p1,p2s,p3s,pc');
+  check('wizard: group project path', ['p1', 'p2g', 'p3g'].map(x => mk({ kind: 'project', pmode: 'group' }).n(x)).join(','), 'p2g,p3g,pc');
+  check('wizard: categories come before the last step', mk({ kind: 'project', pmode: 'solo' }).n('pc'), 'p4');
   check('wizard: money lent path', ['what', 'l1'].map(x => mk({ kind: 'lending' }).n(x)).join(','), 'l1,l2');
   check('wizard: a name is required', mk({ name: '  ' }).v('r1') !== '', true);
   check('wizard: who is required for sessions', mk({ name: 'P', who: '' }).v('r2') !== '', true);
@@ -5240,6 +5246,29 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   const wc = extractFn('wizCreate');
   check('wizard saves through the normal forms', /saveProject\(\)/.test(wc) && /saveProjectForm\(\)/.test(wc) && /saveLendingCircle\(\)/.test(wc), true);
   check('wizard opens the new tracker and its tour', /openProject\([\w$]+\.id\)/.test(wc) && /scheduleTrackerTour\(/.test(wc), true);
+  // v148 (Rachel, 30 Sep 2026): budgets hidden; categories are set up in the project wizard.
+  (function () {
+    const exN = (src.match(/project:\[(\[[^\]]*\],?)+\]/) || [''])[0].split('],[').length;
+    const cats = new Function(src.slice(src.indexOf('const WIZ_CATS='), src.indexOf('const WIZ_DAYS=')) + '; return WIZ_CATS;')();
+    check('v148: one suggestion list per project tile', cats.length === exN && exN === 7, true);
+    check('v148: every suggestion list has names', cats.every(l => l.length >= 5 && l.every(c => typeof c === 'string' && c && c !== 'Other')), true);
+    const W = extractFn('wizDraw');
+    check('v148: the wizard asks no budget', /wzBudget/.test(W), false);
+    check('v148: the wizard has a categories screen', /What will you spend on\?/.test(W) && /wizToggleCat\(/.test(W), true);
+    check('v148: wizard categories reach the form', /pfCats=/.test(extractFn('wizCreate')), true);
+    check('v148: the form saves the category list', /categories/.test(extractFn('saveProjectForm')), true);
+    check('v148: the budget field is hidden', /id="pfBudgetGroup" style="display:none"/.test(src), true);
+    check('v148: the project screen reads the budget through the flag', /projBudget\(/.test(extractFn('renderProjectDetail')), true);
+    const F = new Function(extractFn('getUsedCategories') + extractFn('declaredCats') + extractFn('getPickerCategories') + extractFn('_catListReplace') +
+      '; return {getPickerCategories, _catListReplace};')();
+    const p = { categories: ['Venue', 'Food'], history: [{ type: 'charge', costItem: 'Taxi' }, { type: 'payment', costItem: 'Gift' }, { type: 'charge', costItem: 'food' }] };
+    check('v148: picker lists the project\'s own first', F.getPickerCategories(p, 'charge').join(','), 'Venue,Food,Taxi');
+    check('v148: income picker ignores the expense list', F.getPickerCategories(p, 'payment').join(','), 'Gift');
+    check('v148: a project with no list is unchanged', F.getPickerCategories({ history: p.history }, 'charge').join(','), 'Taxi,food');
+    F._catListReplace(p, 'Venue', 'Hall'); check('v148: rename follows into the list', p.categories.join(','), 'Hall,Food');
+    F._catListReplace(p, 'Food', 'Hall'); check('v148: merge-by-rename does not duplicate', p.categories.join(','), 'Hall');
+    F._catListReplace(p, 'Hall', ''); check('v148: delete leaves the list', p.categories.length, 0);
+  })();
   check('wizard examples have pictures', /WIZ_EX=\{\s*regular:\[\[.🧘./.test(src) && /\[.✈️.,.Trip.\]/.test(src), true);
   const wj = extractAsyncFn('wizJoin');
   check('wizard join: a guest is asked to sign in and the code is kept', /AFTER_SIGNIN_CODE_KEY,[\w$]+\)/.test(wj) && /joinSignIn/.test(wj), true);
