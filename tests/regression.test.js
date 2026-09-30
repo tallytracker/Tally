@@ -3206,8 +3206,11 @@ section('Every participant slot is accounted for, including the owner\'s');
   const sheet = extractFn('showLedgerMembers');
   check('the members sheet asks before offering Invite someone',
     /invitableSlots\(/.test(sheet), true);
-  check('and says so plainly when there is nobody left',
-    /has joined\./.test(sheet), true);
+  check('v146: each person not yet invited has a row with Invite in the Action column',
+    /mi-h">Action</.test(sheet) && /miInvite\(/.test(sheet) && /Not invited/.test(sheet), true);
+  check('v146: no separate Invite someone button', /Invite someone<\/button>/.test(src), false);
+  check('v146: picking a person in the table skips the "who" screen', /startInviteFlow\(null,[\w$]+\)/.test(extractFn('miInvite')) && /'irole'|"irole"/.test(extractFn('wizOpenInvite')), true);
+  check('v146: a waiting person gets Recall, not a second Invite row', (sheet.match(/waitingInvites\(/g) || []).length >= 3, true);
   check('the invite flow guards the same way behind the hidden button',
     /invitableSlots\(/.test(extractFn('startInviteFlow')), true);
   check('the participant picker marks an invited name differently from a joined one',
