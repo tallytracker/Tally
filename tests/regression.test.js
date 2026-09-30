@@ -2905,10 +2905,11 @@ section('Sharing is always an invite, and it says what it is');
     new RegExp('valid ' + Q + '\\+INVITE_DAYS\\+' + Q + ' days, one use').test(src), true);
   check('the invite no longer promises autofill it cannot deliver',
     /Tap here to auto-fill your code/.test(src), false);
-  check('the message tells a new user where to type the code',
-    /tap the orange \*\+\* and choose \*I have a join code\*/.test(src), true);
+  check('the message has no how-to-join line (kept short)',
+    /Access Your Invites\* on the home screen|choose \*I have a join code\*/.test(extractFn('buildInviteMessage')), false);
+  check('the message ends on the store links', /APPSTORE_URL;/.test(extractFn('buildInviteMessage')), true);
   check('the message still points a new user at the download',
-    /Get Tally free/.test(src), true);
+    /Download Tally on:/.test(src) && !/Get Tally free/.test(src), true);
   check('the invite is shorter: the two-route New\/Already split is gone',
     /New to Tally\?/.test(src), false);
   /* THIS ASSERTION CAUGHT ITSELF, WHICH IS THE OLDEST TRAP IN THIS PROJECT.
@@ -3555,7 +3556,7 @@ section('A sent invite shows as Waiting to join, and can be recalled');
   check('used or withdrawn codes are pruned by asking the invite',
     /redeemedBy/.test(extractAsyncFn('pruneUsedInvites')) && /dropPendingInvite\(/.test(extractAsyncFn('pruneUsedInvites')), true);
   const members = extractFn('showLedgerMembers');
-  check('the dialog lists waiting invites', /waitingInvites\(/.test(members) && /Waiting to join/.test(members), true);
+  check('the dialog lists waiting invites', /waitingInvites\(/.test(members) && /mi-wait\\?">Waiting</.test(members), true);
   check('each one has Recall', /Recall/.test(members) && /confirmRecallInvite\(/.test(members), true);
   check('an activity\'s named counterparty is shown on its invite row', /participant\|\|[\w$]+\|\|.Invite sent/.test(members) && /\.counterparty/.test(members), true);
   check('a joined counterparty keeps the settings name, account name underneath', /<small>.\+esc\(/.test(members), true);
@@ -3565,7 +3566,10 @@ section('A sent invite shows as Waiting to join, and can be recalled');
   check('recall kills the code on the server', /revokeInviteCode\(/.test(rc), true);
   check('and forgets it on the phone', /dropPendingInvite\(/.test(rc), true);
   check('re-finding the group after the await, by id', /getProject\(/.test(rc.slice(rc.indexOf('revokeInviteCode'))), true);
-  check('after sending, Done moves to Manage Invites', /showLedgerMembers\(\)/.test(extractFn('wizInviteDone')) && /wizGo\(.idone.\)/.test(extractFn('wizSendInvite')), true);
+  check('after Send the wizard closes to Manage Invites (no extra screen)', /showLedgerMembers\(\)/.test(extractFn('wizInviteDone')) && /wizInviteDone\(\)/.test(extractFn('wizSendInvite')) && !/idone/.test(src), true);
+  check('the invite has no Copy button', /Copy the message instead/.test(src), false);
+  check('the code screen says Creating your code', /Creating your code/.test(src) && !/Making a one-time code/.test(src), true);
+  check('view / update use line icons, not emoji', /wiz-ico/.test(extractFn('wizInviteDrawScreen')) && !/👀|✏️/.test(extractFn('wizInviteDrawScreen')), true);
   check('ledger meta keeps the last used code', /joinCode:[\w$.]+\|\|/.test(src), true);
 })();
 
@@ -5280,9 +5284,7 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('invite wizard: a group asks who, and which one is you when unknown', /'iperson'|"iperson"/.test(extractFn('wizOpenInvite')) && /'iyou'|"iyou"/.test(extractFn('wizOpenInvite')), true);
   check('invite wizard: a one-to-one tracker goes straight to the role', /'irole'|"irole"/.test(extractFn('wizOpenInvite')), true);
   check('invite wizard: the code is made before the Send tap (so the share sheet opens)', /wizMakeInvite/.test(extractFn('wizInviteDrawScreen')) && !/async/.test(extractFn('wizSendInvite').slice(0, 30)) && /openWhatsApp\(/.test(extractFn('wizSendInvite')), true);
-  check('invite wizard: the message can be copied instead', /clipboard\.writeText/.test(extractFn('wizSendInvite')), true);
   check('invite wizard: re-finds the tracker after the awaits', /getProject\(/.test(extractAsyncFn('wizMakeInvite').slice(extractAsyncFn('wizMakeInvite').indexOf('doCreateInvite'))), true);
-  check('invite wizard: the done screen says how to join with the +', /I have a join code/.test(extractFn('wizInviteDrawScreen')), true);
   check('doCreateInvite returns the code and sends nothing itself', /return [\w$]+;?\s*\}$/.test(extractAsyncFn('doCreateInvite').trim()) && !/openWhatsApp/.test(extractAsyncFn('doCreateInvite')), true);
   check('wizard: several currencies are passed to the project form', /pfMulti=true/.test(extractFn('wizCreate')) && /pfCurSel=/.test(extractFn('wizCreate')), true);
   check('tour: once per kind and role', /toursSeen/.test(extractFn('scheduleTrackerTour')) && /overlayOpen\(\)/.test(extractFn('scheduleTrackerTour')), true);
