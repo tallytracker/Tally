@@ -5250,6 +5250,9 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('v150: expense popup says Log Expense', /Log Expense</.test(extractFn('showProjectExpenseInput')) && !/Add expense/.test(extractFn('showProjectExpenseInput')), true);
   check('v150: settlement popup says Log Settlement', /Log Settlement</.test(extractFn('showProjectGroupPaymentInput')) && !/Add settlement/.test(extractFn('showProjectGroupPaymentInput')), true);
   check('v150: expense popup has headed sections', (extractFn('showProjectExpenseInput').match(/lf-sec/g) || []).length >= 5, true);
+  // v151: every project popup (solo pay/receive and edit) uses the same headed sections.
+  check('v151: solo Log Payment popup has headed sections', (extractFn('showProjectPayInput').match(/lf-sec/g) || []).length >= 3, true);
+  check('v151: edit popup has headed sections', (extractFn('showProjectEntryActions').match(/lf-sec/g) || []).length >= 5, true);
   // v148 (Rachel, 30 Sep 2026): budgets hidden; categories are set up in the project wizard.
   (function () {
     const exN = (src.match(/project:\[(\[[^\]]*\],?)+\]/) || [''])[0].split('],[').length;
