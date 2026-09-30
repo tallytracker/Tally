@@ -2164,23 +2164,15 @@ section('Invite is a header button next to Edit and Remove');
   /* Having chosen the role up front, nobody should be asked for it again.
      `role` is a parameter and therefore renamed by the minifier, so these
      assert on the GLOBAL function names the branches call - those survive. */
+  /* v142: the invite is a wizard. Its role screen keeps the light cards, offers exactly the
+     two capacities, and the code is made (doCreateInvite) before the Send tap. */
   const flow = extractFn('startInviteFlow');
-  check('a preselected role can go straight to creating the invite',
-    /doCreateInvite\(/.test(flow), true);
-  check('with no role preselected the role question is asked',
-    /showInviteRolePick\(/.test(flow), true);
-  const pick = extractFn('pickInviteParticipant');
-  check('picking a participant can go straight to creating the invite',
-    /doCreateInvite\(/.test(pick), true);
-  /* AND THE ROLE PICKER KEEPS THE LIGHT BUTTONS. It is the invite flow itself
-     now that the chooser is gone, so this is the screen a tap on Invite
-     reaches - it must not go back to the two black slabs. */
-  const rolePick = extractFn('showInviteRolePick');
-  check('the role picker uses the light buttons',
-    /share-choice-btn/.test(rolePick), true);
-  check('and not the ink button', /dialog-btn-save/.test(rolePick), false);
-  check('it still offers exactly the two capacities',
-    /doCreateInvite\(\\?.viewer/.test(rolePick) && /doCreateInvite\(\\?.editor/.test(rolePick), true);
+  check('Invite opens the invite wizard', /wizOpenInvite\(/.test(flow), true);
+  const ids = extractFn('wizInviteDrawScreen');
+  check('the role screen offers exactly the two capacities',
+    /wizChoose\(this,\\?.role\\?.,\\?.viewer/.test(ids) && /wizChoose\(this,\\?.role\\?.,\\?.editor/.test(ids), true);
+  check('and not the ink button', /dialog-btn-save/.test(ids), false);
+  check('the code is made through doCreateInvite', /doCreateInvite\(/.test(extractAsyncFn('wizMakeInvite')), true);
 })();
 
 /* ---- Category examples cover trips as well as builds (27 Aug 2026) ----
@@ -2914,7 +2906,7 @@ section('Sharing is always an invite, and it says what it is');
   check('the invite no longer promises autofill it cannot deliver',
     /Tap here to auto-fill your code/.test(src), false);
   check('the message tells a new user where to type the code',
-    /on the home screen and enter the code/.test(src), true);
+    /tap the orange \*\+\* and choose \*I have a join code\*/.test(src), true);
   check('the message still points a new user at the download',
     /Get Tally free/.test(src), true);
   check('the invite is shorter: the two-route New\/Already split is gone',
@@ -3200,7 +3192,7 @@ section('Every participant slot is accounted for, including the owner\'s');
     SH.ownerParticipantSlot({ participants: ['Rachel Sawan', 'Sabine'], ownerSlotNone: true }), '');
   SH.__setName('Mike');
   check('the picker asks which one is you when it cannot tell',
-    /showWhichIsYou\(/.test(extractFn('showInviteParticipantPick')), true);
+    /'iyou'|"iyou"/.test(extractFn('wizOpenInvite')) && /Which one is you\?/.test(extractFn('wizInviteDrawScreen')), true);
   check('a new group starts with you in it',
     /pfParticipants=settings\.name\?\[settings\.name\]/.test(extractFn('openNewProjectForm')), true);
   check('and so does a new lending circle',
@@ -3216,7 +3208,7 @@ section('Every participant slot is accounted for, including the owner\'s');
   check('the invite flow guards the same way behind the hidden button',
     /invitableSlots\(/.test(extractFn('startInviteFlow')), true);
   check('the participant picker marks an invited name differently from a joined one',
-    /send a new code/.test(extractFn('showInviteParticipantPick')), true);
+    /send a new code/.test(extractFn('wizInviteDrawScreen')) && /Already joined/.test(extractFn('wizInviteDrawScreen')), true);
 
   /* 23 Sep 2026: "what if their code has expired and i need to issue a new
      code?" A code still out must not lock the name: re-inviting replaces it. */
@@ -3235,7 +3227,7 @@ section('Every participant slot is accounted for, including the owner\'s');
     SH.invitableSlots(P([])), null);
   SH.__setName('Mike');
   check('a waiting name in the picker is tappable and says a new code replaces the old',
-    / · send a new code["']/.test(extractFn('showInviteParticipantPick')), true);
+    /Invited already · send a new code/.test(extractFn('wizInviteDrawScreen')) && /wizPickPerson\(/.test(extractFn('wizInviteDrawScreen')), true);
   check('re-inviting a name kills the code it was sent before',
     /revokeInviteCode\(/.test(extractFn('doCreateInvite')), true);
   check('no screen says "or been invited" any more',
@@ -3573,9 +3565,7 @@ section('A sent invite shows as Waiting to join, and can be recalled');
   check('recall kills the code on the server', /revokeInviteCode\(/.test(rc), true);
   check('and forgets it on the phone', /dropPendingInvite\(/.test(rc), true);
   check('re-finding the group after the await, by id', /getProject\(/.test(rc.slice(rc.indexOf('revokeInviteCode'))), true);
-  const create = extractAsyncFn('doCreateInvite');
-  check('after sending, the screen moves to Manage Invites',
-    create.indexOf('showLedgerMembers') > create.indexOf('createInviteCode'), true);
+  check('after sending, Done moves to Manage Invites', /showLedgerMembers\(\)/.test(extractFn('wizInviteDone')) && /wizGo\(.idone.\)/.test(extractFn('wizSendInvite')), true);
   check('ledger meta keeps the last used code', /joinCode:[\w$.]+\|\|/.test(src), true);
 })();
 
@@ -3872,11 +3862,10 @@ section('The capacity picker looks like the rest of the app');
    style assertions matter more than before, not less: this is the screen every
    invite goes through. */
 (function () {
-  const chooser = extractFn('showInviteRolePick');
-  check('both capacities use the light chooser style',
-    (chooser.match(/class="share-choice-btn"/g) || []).length, 2);
+  /* v142: the capacities are wizard cards now (wizInviteDrawScreen); the old dialog is gone. */
+  const chooser = extractFn('wizInviteDrawScreen');
+  check('both capacities are wizard cards', (chooser.match(/wizChoose\(this,\\?.role/g) || []).length, 2);
   check('neither is an ink button', /dialog-btn-save/.test(chooser), false);
-  check('Cancel is still the outlined button', /dialog-btn-cancel/.test(chooser), true);
   /* THE STYLE ITSELF, or the class name would be an empty promise. Card
      background and a border, exactly like the home screen's action buttons —
      and --card flips with the theme, so this is right in dark mode too. */
@@ -5263,6 +5252,38 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('header +: sits on the slogan line, bottom-right', /\.home-plus-top\{position:absolute;right:0;bottom:4px/.test(src), true);
   const Wm = new Function('_wiz', extractFn('wizValid') + '; return wizValid;');
   check('wizard: several currencies need at least one more', Wm({ d: { multi: true, cur: 'USD', extra: [], people: [] } })('p4') !== '' && Wm({ d: { multi: true, cur: 'USD', extra: ['EUR'], people: [] } })('p4') === '', true);
+  check('wizard: with several currencies it asks which is main', /Which is your main currency\?/.test(extractFn('wizDraw')), true);
+  const dc = new Function('projects', 'toCode', extractFn('wizDefaultCur') + '; return wizDefaultCur;');
+  check('wizard: starts on the newest tracker\'s currency', dc([{ currency: '$' }, { mainCur: 'EUR' }], x => 'USD')(), 'EUR');
+  check('wizard: USD when there is nothing yet', dc([], x => '')(), 'USD');
+  /* searchable currencies */
+  const cm = new Function(extractFn('ccyMatches') + '; return ccyMatches;')();
+  const items = [{ v: 'USD', t: 'US Dollar — USD', s: '$' }, { v: 'LBP', t: 'Lebanese Pound — LBP', s: 'LBP' }, { v: 'GBP', t: 'British Pound — GBP', s: '£' }, { v: 'EGP', t: 'Egyptian Pound — EGP', s: 'E£' }];
+  check('currency search: part of a name', cm(items, 'leb').map(x => x.v).join(), 'LBP');
+  check('currency search: the code', cm(items, 'lbp').map(x => x.v).join(), 'LBP');
+  check('currency search: the symbol', cm(items, '£').map(x => x.v).join(), 'GBP');
+  check('currency search: an exact code comes first', cm(items, 'gbp')[0].v, 'GBP');
+  check('currency search: a name starting with it comes first', cm(items, 'pound').length === 3 && cm(items, 'e')[0].v === 'EGP', true);
+  check('currency search: empty shows everything', cm(items, '').length, 4);
+  check('every full currency list is searchable', /ccySearchify\([\w$]+\)/.test(extractFn('fillSingleCurrencyPicker')) && /ccySearchify\([\w$]+\)/.test(extractFn('populatePfMainCur')) && /ccySearchify\([\w$]+\)/.test(extractFn('populatePfCurAdd')) && /ccySearchify\)/.test(extractFn('wizDraw')), true);
+  check('the wizard currency box is marked searchable', /className=.wiz-in ccy-full./.test(extractFn('wizCurSelect')), true);
+  check('picking fires the same change event as the list', /dispatchEvent\(new Event\(.change./.test(extractFn('pickCcy')), true);
+  /* analytics arrows */
+  const ash = extractFn('adminStatsHtml');
+  check('analytics: arrows against last week / last month', /\.compare/.test(ash) && /▲/.test(ash) && /▼/.test(ash) && /setAdminCmp\(/.test(ash), true);
+  check('analytics: estimated comparisons are marked ~', /exact\?(''|""):('~'|"~")/.test(ash), true);
+  check('analytics: a rise in deletions is red', /ADMIN_BAD_UP\[/.test(ash) && /['"]trackers\.deleted['"]:1/.test(src), true);
+  check('analytics: the email lists the changes', /CHANGE VS LAST/.test(extractFn('adminStatsText')), true);
+  /* invite wizard */
+  const WI = new Function('_wiz', extractFn('wizNextOf') + '; return wizNextOf;');
+  check('invite wizard: after the role comes the code', WI({ d: {} })('irole'), 'isend');
+  check('invite wizard: a group asks who, and which one is you when unknown', /'iperson'|"iperson"/.test(extractFn('wizOpenInvite')) && /'iyou'|"iyou"/.test(extractFn('wizOpenInvite')), true);
+  check('invite wizard: a one-to-one tracker goes straight to the role', /'irole'|"irole"/.test(extractFn('wizOpenInvite')), true);
+  check('invite wizard: the code is made before the Send tap (so the share sheet opens)', /wizMakeInvite/.test(extractFn('wizInviteDrawScreen')) && !/async/.test(extractFn('wizSendInvite').slice(0, 30)) && /openWhatsApp\(/.test(extractFn('wizSendInvite')), true);
+  check('invite wizard: the message can be copied instead', /clipboard\.writeText/.test(extractFn('wizSendInvite')), true);
+  check('invite wizard: re-finds the tracker after the awaits', /getProject\(/.test(extractAsyncFn('wizMakeInvite').slice(extractAsyncFn('wizMakeInvite').indexOf('doCreateInvite'))), true);
+  check('invite wizard: the done screen says how to join with the +', /I have a join code/.test(extractFn('wizInviteDrawScreen')), true);
+  check('doCreateInvite returns the code and sends nothing itself', /return [\w$]+;?\s*\}$/.test(extractAsyncFn('doCreateInvite').trim()) && !/openWhatsApp/.test(extractAsyncFn('doCreateInvite')), true);
   check('wizard: several currencies are passed to the project form', /pfMulti=true/.test(extractFn('wizCreate')) && /pfCurSel=/.test(extractFn('wizCreate')), true);
   check('tour: once per kind and role', /toursSeen/.test(extractFn('scheduleTrackerTour')) && /overlayOpen\(\)/.test(extractFn('scheduleTrackerTour')), true);
   check('tour: empty targets are skipped', /getBoundingClientRect\(\)\.height>0/.test(extractFn('coachShow')), true);
