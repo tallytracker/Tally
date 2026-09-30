@@ -5237,14 +5237,33 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('wizard join waits for the account to be adopted', /_adoptPromise/.test(extractAsyncFn('wizSignIn')), true);
   check('a join lands in the tracker with its tour', /scheduleTrackerTour\(/.test(extractAsyncFn('confirmJoin')) && /return true/.test(extractAsyncFn('confirmJoin')), true);
 
-  /* tracker tour: viewer gets no "add" arrow */
-  const el = { offsetParent: 1 };
-  const T = new Function('document', 'canWriteEntries', extractFn('_tourKind') + extractFn('trackerTourSteps') + '; return trackerTourSteps;');
+  /* tracker tour: one arrow per button, saying when to tap it; a viewer gets none */
+  const mkBtn = (label, fn) => ({ textContent: '＋ ' + label, getAttribute: () => fn });
+  const btns = [mkBtn('Log Session', 'showAddCharge()'), mkBtn('Log Payment', 'showPayInput()')];
+  const el = { offsetParent: 1, querySelectorAll: () => btns };
+  const T = new Function('document', 'canWriteEntries', 'esc', 'isShared', 'ledgerRole',
+    extractFn('_tourKind') + extractFn('tourWhen') + extractFn('trackerTourSteps') + '; return trackerTourSteps;');
   const doc = { querySelector: () => ({ querySelector: () => el }) };
-  const own = T(doc, () => true)({ type: 'fixed' }), view = T(doc, () => false)({ type: 'fixed' });
-  check('tour: editor/owner sees dashboard, add, history, invite, menu, back', own.length, 6);
-  check('tour: viewer skips the add buttons', view.length === 5 && !view.some(x => /Add here/.test(x.text)), true);
+  const own = T(doc, () => true, x => x, () => false, () => 'owner')({ type: 'fixed', direction: 'pay' });
+  const view = T(doc, () => false, x => x, () => true, () => 'viewer')({ type: 'fixed', direction: 'pay' });
+  check('tour: owner sees dashboard, each button, history, invite, menu, back', own.length, 7);
+  check('tour: Log Session says to tap it after each session', /<b>Log Session<\/b>Tap here after each session/.test(own[1].text), true);
+  check('tour: Log Payment says to tap it when you pay', /<b>Log Payment<\/b>Tap here when you pay/.test(own[2].text), true);
+  check('tour: viewer gets no button arrows', view.length === 5 && !view.some(x => /Tap here after|Tap here when you pay/.test(x.text)), true);
   check('tour: ends on the back button', /Back home/.test(own[own.length - 1].text), true);
+  const tw = new Function('isShared', 'ledgerRole', extractFn('tourWhen') + '; return tourWhen;')(() => false, () => 'owner');
+  const b = fn => ({ getAttribute: () => fn });
+  check('tour: getting paid is worded for the earner', /when you get paid/.test(tw({ direction: 'earn' }, b('showPayInput()'))), true);
+  check('tour: group settlement explained', /pays another person back/.test(tw({}, b('showProjectGroupPaymentInput()'))), true);
+  check('tour: money lent buttons explained', /lends money/.test(tw({}, b('showLendingTransInput()'))) && /pays money back/.test(tw({}, b('showLendingRepaymentInput()'))), true);
+  /* v142 wording and layout */
+  check('wizard: "Create a new tracker", not "start from scratch"', /Create a new tracker/.test(src) && /There.{1,2}s something I.{1,2}d like to start tracking/.test(src) && !/Start from scratch/.test(src), true);
+  check('wizard reminders: log, not attend', /not to attend it/.test(extractFn('wizDraw')), true);
+  check('wizard: the time box cannot overflow', /\.wiz-in\[type=time\]\{[^}]*max-width:100%/.test(src), true);
+  check('header +: sits on the slogan line, bottom-right', /\.home-plus-top\{position:absolute;right:0;bottom:4px/.test(src), true);
+  const Wm = new Function('_wiz', extractFn('wizValid') + '; return wizValid;');
+  check('wizard: several currencies need at least one more', Wm({ d: { multi: true, cur: 'USD', extra: [], people: [] } })('p4') !== '' && Wm({ d: { multi: true, cur: 'USD', extra: ['EUR'], people: [] } })('p4') === '', true);
+  check('wizard: several currencies are passed to the project form', /pfMulti=true/.test(extractFn('wizCreate')) && /pfCurSel=/.test(extractFn('wizCreate')), true);
   check('tour: once per kind and role', /toursSeen/.test(extractFn('scheduleTrackerTour')) && /overlayOpen\(\)/.test(extractFn('scheduleTrackerTour')), true);
   check('tour: empty targets are skipped', /getBoundingClientRect\(\)\.height>0/.test(extractFn('coachShow')), true);
 })();
