@@ -5248,8 +5248,8 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('wizard opens the new tracker and its tour', /openProject\([\w$]+\.id\)/.test(wc) && /scheduleTrackerTour\(/.test(wc), true);
   // v150 (Rachel, 30 Sep 2026): the popups are titled like their buttons, with a heading per section.
   check('v150: expense popup says Log Expense', /Log Expense</.test(extractFn('showProjectExpenseInput')) && !/Add expense/.test(extractFn('showProjectExpenseInput')), true);
-  check('v150: settlement popup says Log Settlement', /Log Settlement</.test(extractFn('showProjectGroupPaymentInput')) && !/Add settlement/.test(extractFn('showProjectGroupPaymentInput')), true);
-  check('v150: expense popup has headed sections', (extractFn('showProjectExpenseInput').match(/lf-sec/g) || []).length >= 5, true);
+  check('v150: settlement popup says Log Settlement', /Log Settlement · step/.test(extractFn('gpwDraw')) && !/Add settlement/.test(extractFn('gpwDraw')), true); // v153: label moved to the wizard steps
+  check('v150: expense popup has headed sections', (extractFn('showProjectExpenseInput').match(/lf-sec/g) || []).length >= 4, true); // v153: amount is the big question now
   // v151: every project popup (solo pay/receive and edit) uses the same headed sections.
   check('v151: solo Log Payment popup has headed sections', (extractFn('showProjectPayInput').match(/lf-sec/g) || []).length >= 3, true);
   check('v151: edit popup has headed sections', (extractFn('showProjectEntryActions').match(/lf-sec/g) || []).length >= 5, true);
@@ -5342,6 +5342,55 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('wizard: several currencies are passed to the project form', /pfMulti=true/.test(extractFn('wizCreate')) && /pfCurSel=/.test(extractFn('wizCreate')), true);
   check('tour: once per kind and role', /toursSeen/.test(extractFn('scheduleTrackerTour')) && /overlayOpen\(\)/.test(extractFn('scheduleTrackerTour')), true);
   check('tour: empty targets are skipped', /getBoundingClientRect\(\)\.height>0/.test(extractFn('coachShow')), true);
+})();
+
+/* v152: activity Log Payment / Log Session open a wizard-style popup */
+(function () {
+  const sp = extractFn('showPayInput');
+  const mk = function (dir, name) {
+    let html = '';
+    const el = { innerHTML: '' };
+    const f = new Function('getProject', 'currentProjectId', 'document', 'settings', 'hasOther', 'otherName', 'isPay', 'esc', 'rd2', 'calcBalance', 'cur', 'fmtN', 'wpopOpen', 'wpopEnter', 'wpopBtns',
+      'var chargeOpen, oneOffOpen, payOpen;' + sp + '; showPayInput(); ');
+    try { f(function () { return { direction: dir, counterparty: 'Rita' }; }, 'x', { getElementById: function () { return el; } }, { name: name },
+      function () { return true; }, function () { return 'Rita'; }, function (p) { return p.direction !== 'earn'; },
+      function (t) { return String(t); }, function (n) { return n; }, function () { return 40; }, function () { return '$'; }, function (n) { return String(n); },
+      function (h) { html = h; }, function () { return ''; }, function () { return ''; }); } catch (e) { html = ''; }
+    return html;
+  };
+  check('log payment popup: I pay -> "How much did Rachel pay Rita?"', /How much did Rachel pay Rita\?/.test(mk('pay', 'Rachel')), true);
+  check('log payment popup: I earn -> "How much did Rita pay Rachel?"', /How much did Rita pay Rachel\?/.test(mk('earn', 'Rachel')), true);
+  check('log payment popup: no name set -> "you"', /How much did you pay Rita\?/.test(mk('pay', '')), true);
+  check('log payment popup: offers the full balance', /Full balance: \$40/.test(mk('pay', 'Rachel')), true);
+  check('log payment: no inline amount box any more', /payInput'\)\.innerHTML=`<div class="input-row"/.test(sp), false);
+  check('log payment: confirm closes the popup and flashes the row', /wpopDone\(/.test(extractFn('confirmPay')), true);
+  const sc = extractFn('showAddCharge');
+  check('log session: per-session / per-day ask to confirm first', /confirmQuickSession/.test(sc) && /Log a session\?/.test(sc) && /Log a day\?/.test(sc), true);
+  check('log session: hourly asks how long in the popup', /How long was the session\?/.test(sc) && /chargeHrs/.test(sc) && /wpopOpen\(/.test(sc), true);
+  check('log session: confirm adds the charge and closes the popup', /addEntry\(/.test(extractFn('confirmQuickSession')) && /wpopDone\(/.test(extractFn('confirmQuickSession')), true);
+  check('log session: hourly confirm closes the popup', /wpopDone\(/.test(extractFn('confirmCharge')), true);
+  check('wizard popup: says where to view and edit it', /Transaction History/.test(src.slice(src.indexOf('const WPOP_HIST_NOTE'), src.indexOf('const WPOP_HIST_NOTE') + 200)), true);
+  check('wizard popup: history stays open after logging', /_histOpen\[[\w$.]+\]=true/.test(extractFn('wpopDone')), true);
+  check('new tracker screen: solo / shared in bold', /<strong>on your own<\/strong> or <strong>shared with others<\/strong>/.test(src), true);
+})();
+
+/* v153: timer link; project Log Expense one quick screen; Log Settlement wizard */
+(function () {
+  check('session popup: offers the timer instead', /wpopTimerLink\(/.test(extractFn('showAddCharge')) && /start the timer instead/.test(extractFn('wpopTimerLink')) && /startTimer\(\)/.test(extractFn('wpopTimerLink')), true);
+  check('session popup: no timer link while one is running', /timers\[[\w$.]+\]\?(''|"")/.test(extractFn('wpopTimerLink')), true);
+  const ex = extractFn('showProjectExpenseInput');
+  check('log expense: wizard-style popup with the amount question', /wpopOpen\(/.test(ex) && /How much was it\?/.test(ex) && /How much did you spend\?/.test(ex), true);
+  check('log expense: paid by / split / notes fold behind a summary', /id="wpMore" hidden/.test(ex) && /Paid by <b>/.test(ex) && /wpopMore\(\)/.test(ex), true);
+  check('log expense: the fields confirm reads are still there', /projExpAmt/.test(ex) && /projExpNote/.test(ex) && /projExpCat/.test(ex), true);
+  const gd = extractFn('gpwDraw');
+  check('log settlement: three steps (who paid, whom, how much)', /Who paid\?/.test(gd) && /Who did /.test(gd) && /How much did /.test(gd) && /step ['"]\+[\w$]+\+['"] of 3/.test(gd), true);
+  check('log settlement: suggests the settle-up transfers', /gpwSuggest\(/.test(gd) && /calcTransfers\(/.test(extractFn('gpwTransfers')), true);
+  check('log settlement: step 3 carries the fields confirm reads', /id="projGpFrom"/.test(gd) && /id="projGpTo"/.test(gd) && /id="projGpAmt"/.test(gd) && /id="projGpNote"/.test(gd), true);
+  check('log settlement: Go back from "More than owed" keeps what was typed', /showProjectGroupPaymentInput\(true\)/.test(src) && /_gpw\.amt=/.test(extractFn('confirmProjectGroupPayment')), true);
+  const GP = new Function('_gpw', 'gpwDraw', 'getProject', 'currentProjectId', extractFn('gpwPick') + '; return gpwPick;');
+  const st = { step: 1, to: 'Rachel' };
+  GP(st, function () {}, function () { return { participants: ['Rachel', 'Rita'] }; }, 'x')('from', 0);
+  check('log settlement: picking the payer moves to step 2 and clears the same person as payee', st.step === 2 && st.from === 'Rachel' && st.to === null, true);
 })();
 
 /* ============================ RESULTS ============================ */
