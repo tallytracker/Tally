@@ -5402,6 +5402,17 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('timer: started from the session popup', /startTimer\(\)/.test(extractFn('wpopTimerLink')), true);
 })();
 
+/* v156: clearer split in Log Expense */
+(function () {
+  const ex = extractFn('showProjectExpenseInput'), up = extractFn('updateProjSplitPreview');
+  check('split: asked as a big question "Who shares this cost?"', /wpop-bigh">Who shares this cost\?/.test(ex) && !/>Split between</.test(ex), true);
+  check('split: every name has a live amount next to it', /class="proj-each" data-name=/.test(ex) && /\.proj-each/.test(up), true);
+  check('split: the amount follows the x2 / x1/2 multipliers', /proj-mult-select\[data-name=/.test(up.slice(up.indexOf('.proj-each'))), true);
+  check('split: unticked people say "not sharing"', /not sharing/.test(up), true);
+  check('split: no more "per share" jargon', /per share/.test(up), false);
+  check('split: hint before the amount is typed', /Enter the amount above to see what each person pays/.test(up), true);
+})();
+
 /* ============================ RESULTS ============================ */
 Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks).concat(_pushChecks).concat(_unshareChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
