@@ -5413,6 +5413,20 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('split: hint before the amount is typed', /Enter the amount above to see what each person pays/.test(up), true);
 })();
 
+/* v157/v158: pasting a join code joins straight away; no Paste button */
+(function () {
+  const jc = (function(){ const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    return new Function('LEDGER_ALPHABET', extractFn('normalizeJoinCode') + extractFn('isWellFormedCode') + extractFn('joinCodeFromText') + 'return joinCodeFromText;')(A); })();
+  check('paste: a bare code', jc(' T7KM2X\n'), 'T7KM2X');
+  check('paste: a lower-case code', jc('t7km2x'), 'T7KM2X');
+  check('paste: the whole invite message', jc('Rachel invited you to Ski trip on Tally.\n\n*Use the following join code: T7KM2X*\n(valid 7 days, one use)'), 'T7KM2X');
+  check('paste: text with no code gives nothing', jc('hello there'), '');
+  check('paste: the box joins on paste (wizard)', /onpaste="joinPasteJoins\(event,wizJoin\)"/.test(src), true);
+  check('paste: the box joins on paste (Access Your Invites)', /onpaste="joinPasteJoins\(event,submitJoinCode\)"/.test(src), true);
+  check('paste: no Paste code button (the box takes a paste)', /Paste code<\/button>/.test(src) || /function wizPaste\(/.test(src), false);
+  check('paste: the Join button stays', /id="wzJoinBtn" onclick="wizJoin\(\)">Join</.test(src), true);
+})();
+
 /* ============================ RESULTS ============================ */
 Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks).concat(_pushChecks).concat(_unshareChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
