@@ -5427,6 +5427,87 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('paste: the Join button stays', /id="wzJoinBtn" onclick="wizJoin\(\)">Join</.test(src), true);
 })();
 
+/* v159: a ledger save is never dropped (Diana's 3rd entry, 3 Oct 2026), and shared-ledger notifications */
+(function () {
+  const body = [
+    extractConstLine('const LEDGER_LOCAL_KEYS='),
+    extractFn('_stableJSON'), extractFn('ledgerDataOf'), extractFn('ledgerUnchanged'),
+    extractFn('pushDirtyLedgers'), extractFn('ledgerRetryLater'),
+    'var _lgBase={},_lgLoaded={},_lgPushing={},_lgAgain={},_lgRetryN={},_lgRetryT={};',
+    'var syncStatus="",timers=[],calls=[];',
+    'function sharingReady(){return true} function isShared(p){return !!(p&&p.shared&&p.ledgerId)}',
+    'function canEditLedger(){return true} function updateSyncBadge(){} function onLedgerGone(){}',
+    'function setTimeout(fn,ms){timers.push({fn:fn,ms:ms});return timers.length} function clearTimeout(){}',
+    // pushLedger: each call takes the next planned outcome; resolves/rejects when the test says so
+    'function pushLedger(p){const sent=JSON.stringify(ledgerDataOf(p));let res,rej;const pr=new Promise(function(a,b){res=a;rej=b});',
+    '  calls.push({n:p.history.length,done:function(){_lgBase[p.ledgerId]=JSON.parse(sent);res()},fail:function(){rej(new Error("unavailable"))}});return pr}',
+    'return {run:pushDirtyLedgers,calls:calls,timers:timers,base:_lgBase,loaded:_lgLoaded,same:ledgerUnchanged,',
+    '  setProjects:function(a){projects=a}};'
+  ].join('\n');
+  const T = new Function('console', 'var projects=[];' + body)({ error() {}, log() {} });
+  const p = { id: 'p1', ledgerId: 'L1', shared: true, name: 'Paris', history: [{ id: 'a' }, { id: 'b' }] };
+  T.setProjects([p]); T.loaded.L1 = true; T.base.L1 = { name: 'Paris', history: [{ id: 'a' }] };
+  const tick = () => new Promise(r => global.setTimeout(r, 0));
+  _pushChecks.push((async function () {
+    T.run();                                   // entry b goes up
+    check('sync: a change starts a ledger write', T.calls.length, 1);
+    p.history.unshift({ id: 'c' });            // Diana's 3rd entry, while b is still in flight
+    T.run();
+    check('sync: no second write while one is in flight', T.calls.length, 1);
+    T.calls[0].done(); await tick();
+    check('sync: the save made during the write is queued, not dropped', T.timers.length, 1);
+    T.timers.shift().fn();
+    check('sync: ...and goes up straight after', [T.calls.length, T.calls[1].n], [2, 3]);
+    p.history.unshift({ id: 'd' }); T.calls[1].done(); await tick();
+    T.timers.length = 0; T.run();              // weak signal: this write fails
+    T.calls[2].fail(); await tick();
+    check('sync: a failed write is retried, first after 2s', T.timers.map(t => t.ms), [2000]);
+    T.timers.shift().fn(); T.calls[3].fail(); await tick();
+    check('sync: then backs off (4s)', T.timers.map(t => t.ms), [4000]);
+    T.timers.shift().fn(); T.calls[4].done(); await tick();
+    check('sync: the retried write lands the entry', T.base.L1.history.map(h => h.id), ['d', 'c', 'a', 'b']);
+    T.run();
+    check('sync: nothing left to write once it has landed', T.calls.length, 5);
+    p._w = { uid: 'x', ver: 1 };
+    check('sync: the writer stamp alone is not a change', T.same(p), true);
+  })());
+  check('sync: retried when the phone comes back online', /addEventListener\(['"]online['"],function\(\)\{try\{if\(sharingUnlocked\(\)\)pushDirtyLedgers\(\)/.test(src), true);
+  check('sync: and when the app comes back to the screen', /visibilityState===['"]visible['"]&&sharingUnlocked\(\)\)pushDirtyLedgers\(\)/.test(src), true);
+  const pl = extractFn('pushLedger');
+  check('notify: each ledger write says who saved it, tied to the version', /\._w=\{uid:currentUser\.uid,ver:\(\w+\.version\|\|0\)\+1/.test(pl), true);
+
+  // the switches
+  const N = new Function('settings', 'currentUser', '_lgMeta', 'window', 'Notification', 'localStorage',
+    'function _hasNativePushBridge(){return false} function isShared(p){return !!(p&&p.shared&&p.ledgerId)}' +
+    extractFn('ledgerNotifsOn') + extractFn('ledgerMuted') + extractFn('_lsGet') + extractFn('devicePushReady') +
+    extractFn('ledgerNotifOnFor') + extractFn('ledgerOtherWriters') + extractFn('ledgerNotifRowHtml') +
+    'return {on:ledgerNotifsOn,muted:ledgerMuted,ready:devicePushReady,others:ledgerOtherWriters,row:ledgerNotifRowHtml,onFor:ledgerNotifOnFor};');
+  const meta = { L1: { members: { me: { role: 'viewer', name: 'Rachel' }, di: { role: 'owner', name: 'Diana' } } },
+                 L2: { members: { me: { role: 'owner', name: 'Rachel' }, v: { role: 'viewer', name: 'Sam' } } } };
+  const ls = { getItem() { return null; } };
+  const X = N({ mutedLedgers: { L3: true } }, { uid: 'me' }, meta, { Notification: 1 }, { permission: 'granted' }, ls);
+  const L1 = { shared: true, ledgerId: 'L1' }, L2 = { shared: true, ledgerId: 'L2' }, L3 = { shared: true, ledgerId: 'L3' };
+  check('notify: on unless switched off', X.on(), true);
+  check('notify: a viewer hears from the owner', X.others(L1), ['Diana']);
+  check('notify: an owner with only viewers has nobody to hear from', X.others(L2), []);
+  check('notify: no toggle where nobody else can add', X.row(L2), '');
+  check('notify: Details shows the toggle, on', /toggle-switch on" onclick="toggleLedgerMute\(\)"/.test(X.row(L1)), true);
+  check('notify: a muted ledger is off', X.onFor(L3), false);
+  const Y = N({}, { uid: 'me' }, meta, { Notification: 1 }, { permission: 'default' }, ls);
+  check('notify: not ready before permission is given', Y.ready(), false);
+  check('notify: switches mirrored where the server reads them', /collection\(['"]reminders['"]\)\.doc\(currentUser\.uid\)\.set\(\{ledgerNotifs:ledgerNotifsOn\(\),\s*mutedLedgers:/.test(extractFn('writeLedgerNotifPrefs')), true);
+  check('notify: offered after joining', /maybeAskLedgerNotifsSoon\(\w+\.id\)/.test(extractFn('confirmJoin')), true);
+  check('notify: offered when opening a shared ledger', /maybeAskLedgerNotifsSoon\(\w+\)/.test(extractFn('openProject')), true);
+  check('notify: asked once per device', /if\(_lsGet\(LG_ASKED_KEY\)\)return;/.test(extractFn('maybeAskLedgerNotifs')), true);
+  check('notify: Settings has the shared-ledger switch', /ledgerNotifSettingsHtml\(\)/.test(extractFn('renderNotifSettings')) && /ledgerNotifSettingsHtml\(\)/.test(extractFn('_renderNotifSettingsNative')), true);
+  check('notify: the members table carries the toggle', /\+ledgerNotifRowHtml\(\w+\)\+/.test(extractFn('showLedgerMembers')), true);
+  check('notify: tapping a notice opens the ledger', /#ledger=\(\[A-Za-z0-9_-\]\+\)/.test(extractFn('checkLedgerDeepLink')), true);
+  const sw = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
+  check('sw: a ledger notice is not rewritten into a session reminder', /if\s*\(\s*\w+\.kind\s*===\s*['"]ledger['"]\s*\)\s*\{[\s\S]{0,400}?return;?\s*\}/.test(sw), true);
+  check('sw: one notice per ledger (tag)', /tag:\s*\w+\.tag\s*\|\|\s*['"]tally-ledger['"]/.test(sw), true);
+  check('sw: tapping focuses Tally and opens that ledger', /postMessage\(\{\s*type:\s*['"]tally-open-ledger['"],\s*ledgerId(:\s*\w+)?\s*\}\)/.test(sw), true);
+})();
+
 /* ============================ RESULTS ============================ */
 Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks).concat(_pushChecks).concat(_unshareChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
