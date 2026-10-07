@@ -5525,6 +5525,14 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('viewer cats: no drag-to-merge hint for a viewer', /&&canWriteEntries\(\w+\)\)\w+\+='<div class="cat-drag-tip">/.test(extractFn('renderProjectDetail')), true);
 })();
 
+/* v162: Tally is always light, even on a phone in dark mode (Rachel, 7 Oct 2026) */
+(function () {
+  check('light only: no dark-mode media query is active', /@media\s*\(prefers-color-scheme:\s*dark\)/.test(src), false);
+  check('light only: page declares color-scheme "only light"', /<meta name="?color-scheme"? content="only light"/.test(src) && /color-scheme:\s*only light/.test(src), true);
+  check('light only: no dark status-bar colour', /#131009"? media=/.test(src), false);
+  check('light only: category colours use the light palette', /return false/.test(extractFn('prefersDark')), true);
+})();
+
 /* ============================ RESULTS ============================ */
 Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks).concat(_pushChecks).concat(_unshareChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
