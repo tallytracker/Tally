@@ -5541,6 +5541,14 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('wizard name: hint for Coaching is an example, not a value', /["']?Coaching["']?:["']e\.g\. /.test(src), true);
 })();
 
+/* v164: analytics chart of new installs per week (Rachel, 7 Oct 2026) */
+(function () {
+  check('installs chart: drawn in the analytics, after Users', /installsChartHtml\(\w+\.installsByWeek\)/.test(extractFn('adminStatsHtml')), true);
+  const f = extractFn('installsChartHtml');
+  check('installs chart: hidden until the server sends the weeks', /if\(!Array\.isArray\(\w+\)\|\|!\w+\.length\)return ?''/.test(f.replace(/"/g, "'")), true);
+  check('installs chart: tap a bar to read its week', /asWkTip\(this\)/.test(f) && /New installs per week/.test(f), true);
+})();
+
 /* ============================ RESULTS ============================ */
 Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks).concat(_pushChecks).concat(_unshareChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
