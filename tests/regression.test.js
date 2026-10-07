@@ -5533,6 +5533,14 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('light only: category colours use the light palette', /return false/.test(extractFn('prefersDark')), true);
 })();
 
+/* v163: the + wizard never prefills the tracker name (Rachel, 7 Oct 2026: people kept "Coaching") */
+(function () {
+  check('wizard name: picking a tile does not fill in the name', /\.name=/.test(extractFn('wizKind')), false);
+  check('wizard name: the box shows a tile example as hint only', /\(["']wzName["'],\w+\.name,wizNameHint\(\w+\)\|\|\w+\)/.test(extractFn('wizDraw')), true);
+  check('wizard name: Next refuses an empty name', /Please give it a name/.test(extractFn('wizValid')), true);
+  check('wizard name: hint for Coaching is an example, not a value', /["']?Coaching["']?:["']e\.g\. /.test(src), true);
+})();
+
 /* ============================ RESULTS ============================ */
 Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks).concat(_pushChecks).concat(_unshareChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
