@@ -5306,7 +5306,7 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('wizard: "Create a new tracker", not "start from scratch"', /Create a new tracker/.test(src) && /There.{1,2}s something I.{1,2}d like to start tracking/.test(src) && !/Start from scratch/.test(src), true);
   check('wizard reminders: log, not attend', /not to attend it/.test(extractFn('wizDraw')), true);
   check('wizard: the time box cannot overflow', /\.wiz-in\[type=time\]\{[^}]*max-width:100%/.test(src), true);
-  check('header +: sits on the slogan line, bottom-right', /\.home-plus-top\{position:absolute;right:0;bottom:4px/.test(src), true);
+  check('header +: bottom-right, hanging below the slogan (v161)', /\.home-plus-top\{position:absolute;right:0;bottom:-34px;width:64px;height:64px/.test(src), true);
   const Wm = new Function('_wiz', extractFn('wizValid') + '; return wizValid;');
   check('wizard: several currencies need at least one more', Wm({ d: { multi: true, cur: 'USD', extra: [], people: [] } })('p4') !== '' && Wm({ d: { multi: true, cur: 'USD', extra: ['EUR'], people: [] } })('p4') === '', true);
   check('wizard: with several currencies it asks which is main', /Which is your main currency\?/.test(extractFn('wizDraw')), true);
@@ -5506,6 +5506,23 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('sw: a ledger notice is not rewritten into a session reminder', /if\s*\(\s*\w+\.kind\s*===\s*['"]ledger['"]\s*\)\s*\{[\s\S]{0,400}?return;?\s*\}/.test(sw), true);
   check('sw: one notice per ledger (tag)', /tag:\s*\w+\.tag\s*\|\|\s*['"]tally-ledger['"]/.test(sw), true);
   check('sw: tapping focuses Tally and opens that ledger', /postMessage\(\{\s*type:\s*['"]tally-open-ledger['"],\s*ledgerId(:\s*\w+)?\s*\}\)/.test(sw), true);
+})();
+
+/* v160: a VIEWER can't rename, merge or delete categories (Rachel, 5 Oct 2026) */
+(function () {
+  const det = extractFn('showCategoryDetail');
+  check('viewer cats: popup hides Rename/Merge/Delete for a viewer', /\$\{canWriteEntries\(\w+\)\?'<button class="dialog-btn-save" onclick="renameCategory\(\)">/.test(det), true);
+  ['showMergeCategory', 'confirmMergeCategory', 'mergeCategories', 'renameCategory', 'doRenameCategory', 'confirmDeleteCategory', 'deleteCategory'].forEach(function (f) {
+    check('viewer cats: ' + f + ' refuses a viewer', /requireEditRights\(\w+\)/.test(extractFn(f)), true);
+  });
+  check('viewer cats: drag-to-merge never starts for a viewer', /!canWriteEntries\(\w+\)\)return/.test(extractFn('_catDragStart')), true);
+})();
+
+/* v161: bigger home + (Rachel, 7 Oct 2026); viewers don't see the drag-to-merge hint */
+(function () {
+  check('home +: 64px with a 34px icon', /id="homePlusTop"[^>]*><svg width="34" height="34"/.test(src), true);
+  check('home +: header makes room while the + shows', /\.home-header\.has-plus\{margin-bottom:56px\}/.test(src) && /classList\.toggle\(['"]has-plus['"],!\w+\)/.test(extractFn('syncHomePlus')), true);
+  check('viewer cats: no drag-to-merge hint for a viewer', /&&canWriteEntries\(\w+\)\)\w+\+='<div class="cat-drag-tip">/.test(extractFn('renderProjectDetail')), true);
 })();
 
 /* ============================ RESULTS ============================ */
