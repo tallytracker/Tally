@@ -5276,6 +5276,8 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
     F._catListReplace(p, 'Food', 'Hall'); check('v148: merge-by-rename does not duplicate', p.categories.join(','), 'Hall');
     F._catListReplace(p, 'Hall', ''); check('v148: delete leaves the list', p.categories.length, 0);
   })();
+  // v165 (Rachel, 8 Oct 2026): Monthly expenses replaced the House move tile.
+  check('v165: Monthly expenses tile with its own list', /\[.🧾.,.Monthly expenses.\]/.test(src) && !/House move.\]/.test(src) && /\[.Rent.,.Groceries./.test(src), true);
   check('wizard examples have pictures', /WIZ_EX=\{\s*regular:\[\[.🧘./.test(src) && /\[.✈️.,.Trip.\]/.test(src), true);
   const wj = extractAsyncFn('wizJoin');
   check('wizard join: a guest is asked to sign in and the code is kept', /AFTER_SIGNIN_CODE_KEY,[\w$]+\)/.test(wj) && /joinSignIn/.test(wj), true);
