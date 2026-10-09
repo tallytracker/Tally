@@ -5277,6 +5277,19 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
     F._catListReplace(p, 'Food', 'Hall'); check('v148: merge-by-rename does not duplicate', p.categories.join(','), 'Hall');
     F._catListReplace(p, 'Hall', ''); check('v148: delete leaves the list', p.categories.length, 0);
   })();
+  // v175 (Rachel, 9 Oct 2026): Finished is a dark band; it and its section boxes always start closed.
+  (function () {
+    const fs = extractFn('finishedSectionHtml');
+    check('v175: nothing at all until something is finished', /if\(![\w$]+\.length\)return ?(''|"")/.test(fs), true);
+    check('v175: Finished is a band, not a section heading', /fin-band/.test(fs) && !/sectionHeaderHtml\(/.test(fs), true);
+    check('v175: going home closes the band and every box', /_finOpen=false;_finSecOpen=\{\}/.test(extractFn('goHome')), true);
+    check('v175: open/closed is not saved (always starts closed)', /collapsedGroups/.test(fs), false);
+    check('v175: closed shows nothing inside', /\(_finOpen\?'<div class="fin-body"/.test(fs), true);
+    check('v175: the person\'s sections are boxes, closed until tapped', /fin-box/.test(fs) && /_finSecOpen\[[\w$]+\]/.test(fs) && /toggleFinSec\(/.test(fs), true);
+    check('v175: no sections = trackers listed straight in', /fin-flat/.test(fs), true);
+    check('v175: the band reaches the screen edges', /\.fin-band\{[^}]*margin:0 -18px/.test(src), true);
+    check('v175: the finish popup points at the band', /\.fin-band/.test(extractFn('finPopup')), true);
+  })();
   // v173 (Rachel, 9 Oct 2026): a new or edited entry lands visibly: figures count, the row slides in.
   (function () {
     check('v173: every add goes through the landing', /landMark\([\w$]+,[\w$]+\.id,.add.\)/.test(extractFn('addEntry')), true);
@@ -5384,9 +5397,7 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
     check('v167: short month, no year', N('Sept bills'), 'October bills');
     check('v167: no month in the name adds one', N('Household', '2026-10-05T10:00:00Z'), 'Household, November 2026');
     const fs = extractFn('finishedSectionHtml');
-    check('v167: Finished is closed until opened', /__finished__===false/.test(fs) && /max-height:0/.test(fs), true);
     check('v167: Finished keeps the person\'s sections', /fin-sub/.test(fs) && /groups\.filter/.test(fs), true);
-    check('v167: Finished opens on the first tap', /.__finished__.\?[\w$.\[\]]+===false/.test(extractFn('toggleGroup')), true);
     check('v167: home draws Finished, no archived line', /finishedSectionHtml\(/.test(extractFn('renderProjects')) && !/archived ·/.test(extractFn('renderProjects')), true);
     check('v167: every Menu can finish', ['proj', 'detail', 'lend'].every(k => new RegExp('id="' + k + 'FinishBtn"').test(src)), true);
     check('v167: finishing says where it went', /at the bottom of your home screen/.test(extractFn('toggleFinishedCurrent')) && /finishedSection/.test(extractFn('showFinishedToast')), true);
