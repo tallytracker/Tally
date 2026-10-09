@@ -5499,9 +5499,11 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('log payment popup: no name set -> "you"', /How much did you pay Rita\?/.test(mk('pay', '')), true);
   check('log payment popup: offers the full balance', /Full balance: \$40/.test(mk('pay', 'Rachel')), true);
   check('log payment: no inline amount box any more', /payInput'\)\.innerHTML=`<div class="input-row"/.test(sp), false);
-  check('log payment: confirm closes the popup and flashes the row', /wpopDone\(/.test(extractFn('confirmPay')), true);
+  check('log payment: confirm closes the popup (the landing shows the row)', /wpopDone\(/.test(extractFn('confirmPay')), true);
+  check('v174: the old row flash is gone (no double highlight)', /wp-flash|scrollIntoView/.test(extractFn('wpopDone')), false);
   const sc = extractFn('showAddCharge');
-  check('log session: per-session / per-day ask to confirm first', /confirmQuickSession/.test(sc) && /Log a session\?/.test(sc) && /Log a day\?/.test(sc), true);
+  // v174: per-session / per-day log at once (no confirmation popup); the v173 landing shows it.
+  check('v174: per-session / per-day log straight away, no popup', /fixed.\|\|[\w$]+\.type===.daily.\)\{confirmQuickSession\(\);return\}/.test(sc) && !/Log a session\?/.test(sc) && !/Log a day\?/.test(sc), true);
   check('log session: hourly asks how long in the popup', /How long was the session\?/.test(sc) && /chargeHrs/.test(sc) && /wpopOpen\(/.test(sc), true);
   check('log session: confirm adds the charge and closes the popup', /addEntry\(/.test(extractFn('confirmQuickSession')) && /wpopDone\(/.test(extractFn('confirmQuickSession')), true);
   check('log session: hourly confirm closes the popup', /wpopDone\(/.test(extractFn('confirmCharge')), true);
