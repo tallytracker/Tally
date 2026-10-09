@@ -2340,7 +2340,7 @@ section('v116 tracker Menu and wording');
   check('admin: totals only, the screen never lists a user', !/email|displayName|\.name\b/.test(extractFn('adminStatsHtml')), true);
   check('shared badge survives a restart: the stub keeps memberCount', /memberCount:/.test(extractFn('stubOf')), true);
   check('every shared badge carries the people icon', (extractFn('roleChipHtml').match(/👥/g) || []).length >= 3, true);
-  check('inside a tracker: ONE badge that opens the members table', /roleChipHtml\(/.test(extractFn('sharedMarkHtml')) && /showLedgerMembers\(\)/.test(extractFn('sharedMarkHtml')) && (src.match(/innerHTML=sharedMarkHtml\([\w$]+\)(\+finNudgeHtml\([\w$]+\))?[;,}]/g) || []).length === 3, true);
+  check('inside a tracker: ONE badge that opens the members table', /roleChipHtml\(/.test(extractFn('sharedMarkHtml')) && /showLedgerMembers\(\)/.test(extractFn('sharedMarkHtml')) && (src.match(/innerHTML=sharedMarkHtml\([\w$]+\)(\+\w+\([\w$,]+\))*[;,}]/g) || []).length === 3, true);
   check('join screen: no letters-and-numbers hint', /six of them/.test(src), false);
   check('menu items look like buttons (bordered, rounded)', /\.menu-row\{[^}]*border:1px solid[^}]*border-radius:10px/.test(src), true);
   const ppn = new Function('rd2', 'amtMain', 'entryShareOf', 'getEntriesSinceLastSettlement',
@@ -5276,6 +5276,29 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
     F._catListReplace(p, 'Food', 'Hall'); check('v148: merge-by-rename does not duplicate', p.categories.join(','), 'Hall');
     F._catListReplace(p, 'Hall', ''); check('v148: delete leaves the list', p.categories.length, 0);
   })();
+  // v169 (Rachel, 9 Oct 2026): the next-month nudge comes on the last evening / the 1st morning, never earlier.
+  (function () {
+    const F = new Function('isShared', 'isLedgerOwner', 'const MONTHS=' + JSON.stringify(['January','February','March','April','May','June','July','August','September','October','November','December']) + ';' +
+      extractConstLine('const NM_RE=') + extractFn('nmCovered') + extractFn('nmWindow') + '; return {nmCovered, nmWindow};')(() => false, () => true);
+    const p = { tile: 'monthly', name: 'Household, October 2026', createdAt: '2026-10-02T09:00:00' };
+    const at = s => F.nmWindow(p, new Date(s));
+    check('v169: nothing on Oct 26 (too early)', at('2026-10-26T20:00:00'), '');
+    check('v169: nothing on Oct 31 afternoon', at('2026-10-31T17:59:00'), '');
+    check('v169: Oct 31 evening', at('2026-10-31T18:00:00'), 'eve');
+    check('v169: Nov 1 early morning is still the evening nudge', at('2026-11-01T07:30:00'), 'eve');
+    check('v169: Nov 1 morning', at('2026-11-01T08:00:00'), 'new');
+    check('v169: still there mid-November', at('2026-11-14T12:00:00'), 'new');
+    p.nmDismiss = 'eve';
+    check('v169: Not now on the evening waits for the 1st', at('2026-10-31T21:00:00') + '|' + at('2026-11-01T09:00:00'), '|new');
+    p.nmDismiss = 'new';
+    check('v169: Not now on the 1st is final', at('2026-11-20T09:00:00'), '');
+    check('v169: February ends on the 28th', F.nmWindow({ tile: 'monthly', name: 'Bills Feb 2027' }, new Date('2027-02-28T19:00:00')), 'eve');
+    check('v169: no month in the name uses the creation month', JSON.stringify(F.nmCovered({ name: 'Household', createdAt: '2026-12-03T10:00:00' })), '{"y":2026,"m":11}');
+    check('v169: other trackers never nudge', F.nmWindow({ name: 'Paris, October 2026' }, new Date('2026-11-02T10:00:00')), '');
+    check('v169: the card names the Menu and Finished', /Start Next Month/.test(extractFn('nmCardHtml')) && /will move to Finished, at the bottom of your home screen/.test(extractFn('nmCardHtml')), true);
+    check('v169: the new month says where the old one went', /is now in Finished/.test(extractFn('nmNoteHtml')) && /nmFromName:/.test(extractFn('doStartNextMonth')), true);
+    check('v169: home shows the card too', /nmCardHtml\(/.test(extractFn('renderProjects')), true);
+  })();
   // v168 (Rachel, 9 Oct 2026): the owner finishing a shared tracker nudges the others; it never moves theirs.
   (function () {
     const F = new Function('isShared', 'isLedgerOwner', 'esc', extractFn('finishTracker') + extractFn('unfinishTracker') + extractFn('finNudgeHtml') + '; return {finishTracker, unfinishTracker, finNudgeHtml};');
@@ -5299,7 +5322,7 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   })();
   // v167 (Rachel, 9 Oct 2026): Finished replaces Archive; Start Next Month for Monthly expenses.
   (function () {
-    const N = new Function('const MONTHS=' + JSON.stringify(['January','February','March','April','May','June','July','August','September','October','November','December']) + ';' + extractFn('nextMonthName') + '; return nextMonthName;')();
+    const N = new Function('const MONTHS=' + JSON.stringify(['January','February','March','April','May','June','July','August','September','October','November','December']) + ';' + extractConstLine('const NM_RE=') + extractFn('nextMonthName') + '; return nextMonthName;')();
     check('v167: next month keeps the name', N('Household, October 2026'), 'Household, November 2026');
     check('v167: December rolls the year', N('Rent Dec 2026'), 'Rent January 2027');
     check('v167: short month, no year', N('Sept bills'), 'October bills');
