@@ -2390,7 +2390,7 @@ section('v116 tracker Menu and wording');
   check('home: invite tile is not a dark solid block', /act-pic\.violet/.test(src), false);
   check('no "Tap a person" hint', /Tap a person to see/.test(rpd4), false);
   check('no "Tap an entry to edit" hint', /Tap an entry to edit/.test(src), false);
-  check('order: Categories, Per-Person Breakdown, then Fastest way', /Per-Person Breakdown.,[^;]*\)\+[\w$]+[;}]/.test(rpd4) && /Spending Categories.,[\s\S]*?projCategoryRollups.\)\.innerHTML=([\w$]+)\+/.test(rpd4), true);
+  check('order: Categories, Per-Person Breakdown, then Fastest way', /Per-Person Breakdown.,[^;]*\)\+[\w$]+[;}]/.test(rpd4) && /Where the Money Went.,[\s\S]*?projCategoryRollups.\)\.innerHTML=([\w$]+)\+/.test(rpd4), true);
   check('History starts open', /_histOpen\[[\w$]+\.id\]!==false/.test(extractFn('syncHistFold')), true);
   check('shared settle-up text says to pay', /' → '/.test(src), false);
   const pb = extractFn('showPersonBreakdown');
@@ -3644,7 +3644,7 @@ section('Per-Person Breakdown opens closed on a group project');
     extractFn('togglePeopleDetails').indexOf('saveProject') >= 0, false);
   check('the row still says how many people are in there',
     /.Per-Person Breakdown.,[\w$]+\.length/.test(rpd), true);
-  check('Spending Categories heading', /.Spending Categories./.test(rpd), true);
+  check('Where the Money Went heading', /.Where the Money Went./.test(rpd), true);
   const sec = extractFn('projSectionHtml');
   check('sections share the History heading', /history-header/.test(sec) && /history-toggle/.test(sec) && /group-count/.test(sec), true);
   ['settle', 'cats'].forEach(function (k) {
@@ -5224,7 +5224,7 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('no home-screen arrow tour', /homeTourSteps|maybeShowWalkthrough|maybeCoachFirstCard|maybeCoachFirstEntry/.test(src), false);
 
   /* wizard flow */
-  const W = new Function('_wiz', extractFn('wizNextOf') + extractFn('wizValid') + '; return {n:wizNextOf,v:wizValid};');
+  const W = new Function('_wiz', extractFn('wizNextOf') + extractFn('wizValid') + extractFn('wizTile') + extractFn('wizAsksDir') + extractFn('wizAsksWho') + extractFn('wizAfterDir') + '; return {n:wizNextOf,v:wizValid};');
   const mk = d => W({ d: Object.assign({ people: ['Me'] }, d) });
   check('wizard: join code branch', mk({ mode: 'join' }).n('start'), 'join');
   check('wizard: scratch goes to "what"', mk({ mode: 'new' }).n('start'), 'what');
@@ -5275,6 +5275,20 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
     F._catListReplace(p, 'Venue', 'Hall'); check('v148: rename follows into the list', p.categories.join(','), 'Hall,Food');
     F._catListReplace(p, 'Food', 'Hall'); check('v148: merge-by-rename does not duplicate', p.categories.join(','), 'Hall');
     F._catListReplace(p, 'Hall', ''); check('v148: delete leaves the list', p.categories.length, 0);
+  })();
+  // v166 (Rachel, 9 Oct 2026): solo-project wizard questions follow the tile.
+  (function () {
+    const ex = src.slice(src.indexOf('const WIZ_EX='), src.indexOf('const WIZ_CATS='));
+    const F = new Function(ex + extractFn('wizTile') + extractFn('wizAsksDir') + extractFn('wizAsksWho') + extractFn('wizAfterDir') +
+      'let _wiz;' + extractFn('wizNextOf') + '; return function(ex,dir){_wiz={d:{kind:"project",pmode:"solo",ex:ex,dir:dir,who:"X"}};const p=[];let s="p1";' +
+      'while(s){s=wizNextOf(s);if(s)p.push(s);if(s==="p2s"){_wiz.d.dir=dir}}return p.join(">")+"|"+_wiz.d.dir+"|"+_wiz.d.who};')();
+    check('v166: Trip, paying skips the payee', F(0, 'pay'), 'p2s>pc>p4|pay|');
+    check('v166: Wedding organiser is asked who pays', F(2, 'earn'), 'p2s>p3s>pc>p4|earn|X');
+    check('v166: Renovation asks both ways', F(3, 'pay'), 'p2s>p3s>pc>p4|pay|X');
+    check('v166: Small business never asks a payee', F(4, 'earn'), 'p2s>pc>p4|earn|');
+    check('v166: Monthly expenses skips both, always paying', F(5, 'earn'), 'pc>p4|pay|');
+    check('v166: Something else asks both', F(6, 'earn'), 'p2s>p3s>pc>p4|earn|X');
+    check('v166: paying/getting paid without examples', /I\\?.m getting paid.,.I\\?.m the service provider./.test(src) && !/e\.g\. a project for a client/.test(src), true);
   })();
   // v165 (Rachel, 8 Oct 2026): Monthly expenses replaced the House move tile.
   check('v165: Monthly expenses tile with its own list', /\[.🧾.,.Monthly expenses.\]/.test(src) && !/House move.\]/.test(src) && /\[.Rent.,.Groceries./.test(src), true);
