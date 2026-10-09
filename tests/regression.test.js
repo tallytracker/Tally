@@ -5276,6 +5276,28 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
     F._catListReplace(p, 'Food', 'Hall'); check('v148: merge-by-rename does not duplicate', p.categories.join(','), 'Hall');
     F._catListReplace(p, 'Hall', ''); check('v148: delete leaves the list', p.categories.length, 0);
   })();
+  // v170 (Rachel, 9 Oct 2026): quiet trackers offer to finish; swipe shows Finish next to the bin.
+  (function () {
+    const F = new Function('calcLendingSettlement', 'calcTransfers', 'projNetBalances', 'calcBalance',
+      extractFn('qtLastDate') + extractFn('qtOwesNothing') + extractFn('qtDue') + '; return {qtDue};')(
+      p => ({ outstanding: p._out || 0 }), b => b, p => p._tr || [], p => p._bal || 0);
+    const now = Date.parse('2026-11-20T10:00:00Z'), old = '2026-10-01T10:00:00Z', fresh = '2026-11-10T10:00:00Z';
+    const h = d => [{ type: 'charge', amount: 10, date: d }];
+    check('v170: quiet solo trip offers to finish', F.qtDue({ type: 'project', history: h(old) }, now), true);
+    check('v170: not before 30 days', F.qtDue({ type: 'project', history: h(fresh) }, now), false);
+    check('v170: newest entry counts, wherever it is', F.qtDue({ type: 'project', history: h(old).concat(h(fresh)) }, now), false);
+    check('v170: a group still owing is left alone', F.qtDue({ type: 'project', participants: ['A', 'B'], _tr: [{}], history: h(old) }, now), false);
+    check('v170: a settled group is offered', F.qtDue({ type: 'project', participants: ['A', 'B'], _tr: [], history: h(old) }, now), true);
+    check('v170: classes with money owed are left alone', F.qtDue({ type: 'fixed', _bal: 40, history: h(old) }, now), false);
+    check('v170: classes all paid are offered', F.qtDue({ type: 'fixed', _bal: 0, history: h(old) }, now), true);
+    check('v170: a loan still outstanding is left alone', F.qtDue({ type: 'lending', _out: 50, history: h(old) }, now), false);
+    check('v170: Monthly expenses never get it', F.qtDue({ type: 'project', tile: 'monthly', history: h(old) }, now), false);
+    check('v170: Not now is final', F.qtDue({ type: 'project', qtNo: true, history: h(old) }, now), false);
+    check('v170: empty trackers are not nagged', F.qtDue({ type: 'project', history: [] }, now), false);
+    check('v170: on all three screens', (src.match(/\+qtCardHtml\([\w$]+\)/g) || []).length, 3);
+    check('v170: swipe has Finish next to the bin', /swipe-finish[^`]*swipeFinish\(/.test(extractFn('renderProjectCard')) && /-144/.test(extractFn('_swMove')), true);
+    check('v170: swipe finishing says where it went', /at the bottom of your home screen/.test(extractFn('swipeFinish')), true);
+  })();
   // v169 (Rachel, 9 Oct 2026): the next-month nudge comes on the last evening / the 1st morning, never earlier.
   (function () {
     const F = new Function('isShared', 'isLedgerOwner', 'const MONTHS=' + JSON.stringify(['January','February','March','April','May','June','July','August','September','October','November','December']) + ';' +
