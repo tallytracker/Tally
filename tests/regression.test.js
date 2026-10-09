@@ -5276,6 +5276,18 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
     F._catListReplace(p, 'Food', 'Hall'); check('v148: merge-by-rename does not duplicate', p.categories.join(','), 'Hall');
     F._catListReplace(p, 'Hall', ''); check('v148: delete leaves the list', p.categories.length, 0);
   })();
+  // v172 (Rachel, 9 Oct 2026): finishing shows a popup with an arrow at Finished (the toast was too quick).
+  (function () {
+    const sm = extractFn('showFinishedMoved'), fp = extractFn('finPopup');
+    check('v172: finishing opens the popup', /finPopup\(/.test(sm) && /moved down to <b>Finished<\/b>, at the bottom of your home screen/.test(sm), true);
+    check('v172: the popup has Got it and Undo', /Got it/.test(sm) && /Undo/.test(sm) && /undoFinish\(/.test(sm), true);
+    check('v172: the popup points at the Finished heading', /finishedSection/.test(fp) && /FIN_ARROW_DOWN/.test(fp) && /fm-hole/.test(fp), true);
+    check('v172: it stays until tapped (no timer closes it)', /setTimeout\([^)]*finPopClose/.test(fp), false);
+    check('v172: from the third time it offers to stop', /finPopupCount[^;]*>=3/.test(fp) && /show this again/.test(fp), true);
+    check('v172: turned off, the old toast is used', /finPopupOff/.test(sm) && /showFinishedToast\(/.test(sm), true);
+    check('v172: no room above, it goes below with the arrow up', /fm-up/.test(extractFn('finPopPlace')) && /[\w$]+\.bottom\+/.test(extractFn('finPopPlace')), true);
+    check('v172: Start Next Month shows it too', /finPopup\(/.test(extractFn('doStartNextMonth')) && /moved down to <b>Finished<\/b>/.test(extractFn('doStartNextMonth')), true);
+  })();
   // v171 (Rachel, 9 Oct 2026): the tracker tour's Menu step teaches Mark as Finished.
   check('v171: tour Menu step mentions Mark as Finished', /Mark as Finished<\/strong> here moves it to the bottom of your home screen/.test(extractFn('trackerTourSteps')), true);
   check('v171: Monthly expenses tour mentions Start Next Month', /tile===.monthly.[^;]*Start Next Month/.test(extractFn('trackerTourSteps')), true);
@@ -5358,7 +5370,7 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
     check('v167: Finished opens on the first tap', /.__finished__.\?[\w$.\[\]]+===false/.test(extractFn('toggleGroup')), true);
     check('v167: home draws Finished, no archived line', /finishedSectionHtml\(/.test(extractFn('renderProjects')) && !/archived ·/.test(extractFn('renderProjects')), true);
     check('v167: every Menu can finish', ['proj', 'detail', 'lend'].every(k => new RegExp('id="' + k + 'FinishBtn"').test(src)), true);
-    check('v167: finishing says where it went', /at the bottom of your home screen/.test(extractFn('toggleFinishedCurrent')) && /finishedSection/.test(extractFn('showFinishedMoved')), true);
+    check('v167: finishing says where it went', /at the bottom of your home screen/.test(extractFn('toggleFinishedCurrent')) && /finishedSection/.test(extractFn('showFinishedToast')), true);
     check('v167: Delete offers Finished, not Archive', /Mark as Finished instead/.test(extractFn('archiveCurrentProject')) && !/📦 Archive/.test(src), true);
     check('v167: finishing never bins', /binProject\(/.test(extractFn('toggleFinishedCurrent') + extractFn('doStartNextMonth')), false);
     check('v167: finishedAt stays per person', extractConstLine('const LEDGER_LOCAL_KEYS=').indexOf('finishedAt') >= 0, true);
