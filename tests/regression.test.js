@@ -5276,6 +5276,9 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
     F._catListReplace(p, 'Food', 'Hall'); check('v148: merge-by-rename does not duplicate', p.categories.join(','), 'Hall');
     F._catListReplace(p, 'Hall', ''); check('v148: delete leaves the list', p.categories.length, 0);
   })();
+  // v171 (Rachel, 9 Oct 2026): the tracker tour's Menu step teaches Mark as Finished.
+  check('v171: tour Menu step mentions Mark as Finished', /Mark as Finished<\/strong> here moves it to the bottom of your home screen/.test(extractFn('trackerTourSteps')), true);
+  check('v171: Monthly expenses tour mentions Start Next Month', /tile===.monthly.[^;]*Start Next Month/.test(extractFn('trackerTourSteps')), true);
   // v170 (Rachel, 9 Oct 2026): quiet trackers offer to finish; swipe shows Finish next to the bin.
   (function () {
     const F = new Function('calcLendingSettlement', 'calcTransfers', 'projNetBalances', 'calcBalance',
