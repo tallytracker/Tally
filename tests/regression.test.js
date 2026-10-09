@@ -2340,7 +2340,7 @@ section('v116 tracker Menu and wording');
   check('admin: totals only, the screen never lists a user', !/email|displayName|\.name\b/.test(extractFn('adminStatsHtml')), true);
   check('shared badge survives a restart: the stub keeps memberCount', /memberCount:/.test(extractFn('stubOf')), true);
   check('every shared badge carries the people icon', (extractFn('roleChipHtml').match(/👥/g) || []).length >= 3, true);
-  check('inside a tracker: ONE badge that opens the members table', /roleChipHtml\(/.test(extractFn('sharedMarkHtml')) && /showLedgerMembers\(\)/.test(extractFn('sharedMarkHtml')) && (src.match(/innerHTML=sharedMarkHtml\([\w$]+\)[;,}]/g) || []).length === 3, true);
+  check('inside a tracker: ONE badge that opens the members table', /roleChipHtml\(/.test(extractFn('sharedMarkHtml')) && /showLedgerMembers\(\)/.test(extractFn('sharedMarkHtml')) && (src.match(/innerHTML=sharedMarkHtml\([\w$]+\)(\+finNudgeHtml\([\w$]+\))?[;,}]/g) || []).length === 3, true);
   check('join screen: no letters-and-numbers hint', /six of them/.test(src), false);
   check('menu items look like buttons (bordered, rounded)', /\.menu-row\{[^}]*border:1px solid[^}]*border-radius:10px/.test(src), true);
   const ppn = new Function('rd2', 'amtMain', 'entryShareOf', 'getEntriesSinceLastSettlement',
@@ -5275,6 +5275,27 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
     F._catListReplace(p, 'Venue', 'Hall'); check('v148: rename follows into the list', p.categories.join(','), 'Hall,Food');
     F._catListReplace(p, 'Food', 'Hall'); check('v148: merge-by-rename does not duplicate', p.categories.join(','), 'Hall');
     F._catListReplace(p, 'Hall', ''); check('v148: delete leaves the list', p.categories.length, 0);
+  })();
+  // v168 (Rachel, 9 Oct 2026): the owner finishing a shared tracker nudges the others; it never moves theirs.
+  (function () {
+    const F = new Function('isShared', 'isLedgerOwner', 'esc', extractFn('finishTracker') + extractFn('unfinishTracker') + extractFn('finNudgeHtml') + '; return {finishTracker, unfinishTracker, finNudgeHtml};');
+    const id = x => x, yes = () => true, no = () => false;
+    const own = F(yes, yes, id), guest = F(yes, no, id), solo = F(no, no, id);
+    const p = { shared: true, ledgerId: 'L', ownerName: 'Diana' };
+    own.finishTracker(p);
+    check('v168: owner finishing sets the shared flag', p.ownerFinishedAt > 0 && p.archived === true, true);
+    const g = { shared: true, ledgerId: 'L', ownerName: 'Diana', ownerFinishedAt: p.ownerFinishedAt };
+    check('v168: the others see the banner', /Diana<\/b> marked this as finished/.test(guest.finNudgeHtml(g)), true);
+    check('v168: the owner sees no banner', own.finNudgeHtml(p), '');
+    check('v168: their tracker is not moved', !!g.archived, false);
+    g.finNudgeSeen = g.ownerFinishedAt;
+    check('v168: Keep it here hides it', guest.finNudgeHtml(g), '');
+    own.unfinishTracker(p);
+    check('v168: owner active again clears it as 0 (synced, not deleted)', p.ownerFinishedAt, 0);
+    const q = {}; solo.finishTracker(q);
+    check('v168: unshared trackers get no flag', 'ownerFinishedAt' in q, false);
+    check('v168: banner sits on all three screens', (src.match(/sharedMarkHtml\([\w$]+\)\+finNudgeHtml\(/g) || []).length, 3);
+    check('v168: keep-it choice stays on this phone', extractConstLine('const LEDGER_LOCAL_KEYS=').indexOf('finNudgeSeen') >= 0 && extractConstLine('const LEDGER_LOCAL_KEYS=').indexOf("'ownerFinishedAt'") < 0, true);
   })();
   // v167 (Rachel, 9 Oct 2026): Finished replaces Archive; Start Next Month for Monthly expenses.
   (function () {
