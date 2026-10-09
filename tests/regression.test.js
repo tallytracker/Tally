@@ -3058,8 +3058,9 @@ section('A viewer cannot edit an entry');
   /* HIDDEN, NOT DISABLED (design section 9). A history row that opens an edit
      sheet a viewer cannot use is the same dead control the design rejected for
      the action buttons, so for a viewer the row stops being tappable. */
+  // v173: every row carries data-eid (to show where a new entry landed); a viewer's still has no onclick.
   check('a viewer\'s history row is not tappable',
-    SH.entryRowAttrs(mk('viewer'), 'showEntryActions', 'e1'), '');
+    /onclick|cursor/.test(SH.entryRowAttrs(mk('viewer'), 'showEntryActions', 'e1')), false);
   check('an editor\'s history row still opens the sheet',
     /showEntryActions\('e1'\)/.test(SH.entryRowAttrs(mk('editor'), 'showEntryActions', 'e1')), true);
 })();
@@ -5275,6 +5276,24 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
     F._catListReplace(p, 'Venue', 'Hall'); check('v148: rename follows into the list', p.categories.join(','), 'Hall,Food');
     F._catListReplace(p, 'Food', 'Hall'); check('v148: merge-by-rename does not duplicate', p.categories.join(','), 'Hall');
     F._catListReplace(p, 'Hall', ''); check('v148: delete leaves the list', p.categories.length, 0);
+  })();
+  // v173 (Rachel, 9 Oct 2026): a new or edited entry lands visibly: figures count, the row slides in.
+  (function () {
+    check('v173: every add goes through the landing', /landMark\([\w$]+,[\w$]+\.id,.add.\)/.test(extractFn('addEntry')), true);
+    check('v173: the snapshot is taken before the entry is added', extractFn('addEntry').indexOf('landMark(') < extractFn('addEntry').indexOf('.unshift('), true);
+    check('v173: all three edit screens land too', ['doEditEntry', 'doEditProjectEntry', 'doEditLendingEntry'].every(f => /landMark\([\w$]+,[\w$]+\.id,.edit.\)/.test(extractFn(f))), true);
+    check('v173: every history row carries its entry id', /data-eid=/.test(extractFn('entryRowAttrs')), true);
+    const R = extractFn('landRun');
+    check('v173: nothing happens while a popup is still open (form error)', /overlayOpen\(\)/.test(R), true);
+    check('v173: figures count, card glows, a +/- tag pops', /requestAnimationFrame/.test(R) && /ld-glow/.test(R) && /ld-chip/.test(R), true);
+    check('v173: the row lands with Just added / Updated', /ld-row/.test(R) && /Just added/.test(R) && /Updated/.test(R), true);
+    check('v173: a folded history opens to show it', /_histOpen\[/.test(R), true);
+    check('v173: reduce-motion gets a still highlight', /prefers-reduced-motion/.test(R) && /ld-row-calm/.test(R), true);
+    check('v173: undo toasts are left alone', /querySelector\(.button.\)/.test(R), true);
+    const K = new Function(extractFn('landKey') + '; return landKey;')();
+    const el = t => ({ parentElement: { textContent: t } });
+    check('v173: figures are matched by their label', K(el('TOTAL PAID $760 2 people')) === K(el('TOTAL PAID $840 2 people')) && K(el('Rachel $380')) !== K(el('Sam $380')), true);
+    check('v173: plurals and ids do not break the match', K(el('To pay $20 1 session')) === K(el('To pay $40 2 sessions')) && K({ id: 'dBalAmt', parentElement: { textContent: 'x' } }) === '#dBalAmt', true);
   })();
   // v172 (Rachel, 9 Oct 2026): finishing shows a popup with an arrow at Finished (the toast was too quick).
   (function () {
