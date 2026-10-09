@@ -2304,8 +2304,8 @@ section('v116 tracker Menu and wording');
   check('Delete is drawn in red', /danger/.test(menu), true);
   const order = function (k) { const a = src.indexOf('id="' + k + 'MenuItems"');
     return (src.slice(a, src.indexOf('</div>', a)).match(/>([^<]+)<\/button>/g) || []).map(x => x.slice(1, -9)).join('|'); };
-  check('project Menu order', order('proj'), 'Edit|Share Balance|Export|Settle All &amp; Reset|Delete');
-  check('activity Menu order', order('detail'), 'Edit|Share Balance|Export|Add a one-off charge|Settle All &amp; Reset|Delete');
+  check('project Menu order', order('proj'), 'Edit|Share Balance|Export|Settle All &amp; Reset|Start Next Month|Mark as Finished|Delete');
+  check('activity Menu order', order('detail'), 'Edit|Share Balance|Export|Add a one-off charge|Settle All &amp; Reset|Mark as Finished|Delete');
   // ---- round 4 (24 Sep 2026) ----
   check('no tagline under the logo', /The simple balance tracker<\/p>/.test(src), false);
   check('the payment box says Amount only', /Amount I (paid|received)/.test(src), false);
@@ -5275,6 +5275,26 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
     F._catListReplace(p, 'Venue', 'Hall'); check('v148: rename follows into the list', p.categories.join(','), 'Hall,Food');
     F._catListReplace(p, 'Food', 'Hall'); check('v148: merge-by-rename does not duplicate', p.categories.join(','), 'Hall');
     F._catListReplace(p, 'Hall', ''); check('v148: delete leaves the list', p.categories.length, 0);
+  })();
+  // v167 (Rachel, 9 Oct 2026): Finished replaces Archive; Start Next Month for Monthly expenses.
+  (function () {
+    const N = new Function('const MONTHS=' + JSON.stringify(['January','February','March','April','May','June','July','August','September','October','November','December']) + ';' + extractFn('nextMonthName') + '; return nextMonthName;')();
+    check('v167: next month keeps the name', N('Household, October 2026'), 'Household, November 2026');
+    check('v167: December rolls the year', N('Rent Dec 2026'), 'Rent January 2027');
+    check('v167: short month, no year', N('Sept bills'), 'October bills');
+    check('v167: no month in the name adds one', N('Household', '2026-10-05T10:00:00Z'), 'Household, November 2026');
+    const fs = extractFn('finishedSectionHtml');
+    check('v167: Finished is closed until opened', /__finished__===false/.test(fs) && /max-height:0/.test(fs), true);
+    check('v167: Finished keeps the person\'s sections', /fin-sub/.test(fs) && /groups\.filter/.test(fs), true);
+    check('v167: Finished opens on the first tap', /.__finished__.\?[\w$.\[\]]+===false/.test(extractFn('toggleGroup')), true);
+    check('v167: home draws Finished, no archived line', /finishedSectionHtml\(/.test(extractFn('renderProjects')) && !/archived ·/.test(extractFn('renderProjects')), true);
+    check('v167: every Menu can finish', ['proj', 'detail', 'lend'].every(k => new RegExp('id="' + k + 'FinishBtn"').test(src)), true);
+    check('v167: finishing says where it went', /at the bottom of your home screen/.test(extractFn('toggleFinishedCurrent')) && /finishedSection/.test(extractFn('showFinishedMoved')), true);
+    check('v167: Delete offers Finished, not Archive', /Mark as Finished instead/.test(extractFn('archiveCurrentProject')) && !/📦 Archive/.test(src), true);
+    check('v167: finishing never bins', /binProject\(/.test(extractFn('toggleFinishedCurrent') + extractFn('doStartNextMonth')), false);
+    check('v167: finishedAt stays per person', extractConstLine('const LEDGER_LOCAL_KEYS=').indexOf('finishedAt') >= 0, true);
+    check('v167: Monthly expenses trackers are marked', /tile=.monthly./.test(extractFn('wizCreate')), true);
+    check('v167: settled trips suggest finishing', /All done\? Mark as Finished/.test(src), true);
   })();
   // v166 (Rachel, 9 Oct 2026): solo-project wizard questions follow the tile.
   (function () {
