@@ -5709,10 +5709,10 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   ['showProjectEntryActions', 'showEntryActions', 'showLendingEntryActions'].forEach(function (n) {
     const f = extractFn(n);
     check('compact edit: ' + n + ' uses the compact sheet', /class="dialog[^"]* ef"/.test(f), true);
-    check('compact edit: ' + n + ' puts labels beside boxes', (f.match(/ef-row/g) || []).length >= 3, true);
+    if (n !== 'showProjectEntryActions') check('compact edit: ' + n + ' puts labels beside boxes', (f.match(/ef-row/g) || []).length >= 3, true); // v181: project edit uses heading strips
     check('compact edit: ' + n + ' has Delete beside Cancel', /ef-btns/.test(f) && /dialog-btn-delete/.test(f), true);
   });
-  check('compact edit: amount and currency share one line', /ef-c"><input class="dialog-input" id="editAmt"[\s\S]*?\$\{\w+\}<\/div>/.test(extractFn('showProjectEntryActions')), true);
+  check('compact edit: amount and currency share one line', /ef-c">\$\{\w+\}<input class="dialog-input" id="editAmt"/.test(extractFn('showProjectEntryActions')), true);
   check('compact edit: tighter category chips in the sheet', /\.ef \.cat-chip\{padding:4px 9px/.test(src), true);
 })();
 
@@ -5720,12 +5720,21 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
 (function () {
   const cp = extractFn('buildCategoryPicker');
   check('v177: picker asks "What was it spent on?" (income: "What was it for?")', /What was it spent on\?/.test(cp) && /What was it for\?/.test(cp) && !/>Category</.test(cp), true);
-  ['showProjectExpenseInput', 'showProjectPayInput', 'showProjectGroupPaymentInput'].forEach(function (n) {
-    check('v177: ' + n + ' puts Notes beside its label', /ef-row"><p class="lf-h ef-l">Notes</.test(extractFn(n)), true);
+  ['showProjectExpenseInput', 'showProjectPayInput', 'showProjectGroupPaymentInput', 'showProjectEntryActions'].forEach(function (n) {
+    check('v181: ' + n + ' asks Notes under a heading strip', /<p class="lf-h">Notes</.test(extractFn(n)), true);
   });
   check('v177: solo payment puts amount beside currency', /id="projPayAmt" style="flex:1/.test(extractFn('showProjectPayInput')), true);
   const ed = extractFn('showProjectEntryActions');
-  check('v177: edit sheet has two gaps (who paid, date)', (ed.match(/ef-gap/g) || []).length >= 2, true);
+  // v181 (Rachel, 13 Oct 2026): adding and editing ask the same questions, in the same words and order.
+  const ex = extractFn('showProjectExpenseInput');
+  ['How much was paid\\?', 'Who paid this\\?', 'Who shares this cost\\?'].forEach(function (q) {
+    check('v181: Log Expense and Edit Expense both ask "' + q.replace(/\\/g, '') + '"', new RegExp(q).test(ex) && new RegExp(q).test(ed), true);
+  });
+  check('v181: edit no longer says "How much?" for an expense, "Who paid for this?" or "Split between"', /Who paid for this\?|>Split between</.test(ed), false);
+  const iA = ed.indexOf('How much was paid'), iD = ed.indexOf('>Date<'), iN = ed.indexOf('>Notes<');
+  check('v181: edit keeps Log Expense order (amount, spent on, who paid, who shares, date, notes)', iA > 0 && iA < iD && iD < iN &&
+    /\$\{\w+\?'<div class="lf-sec cat-sec">'\+\w+\+["']<\/div>["']:(''|"")\}(\s|\\n)*\$\{\w+\}(\s|\\n)*\$\{\w+\}(\s|\\n)*<div class="ef-pair">/.test(ed), true);
+  check('v181: questions are warm-brown strips, lighter than the Save button', /\.lf \.lf-h,[^{]*\{display:block;background:#6b5e50;color:#fff/.test(src), true);
   check('v177: currency box fits three letters', /#editCcy\{flex:0 0 96px/.test(src), true);
 })();
 
