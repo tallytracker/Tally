@@ -5530,7 +5530,7 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   // v154 (Rachel, 2 Oct 2026): expense questions reworded, no default payer, all visible; settlement back to v150.
   const ex = extractFn('showProjectExpenseInput');
   check('log expense: asks "How much was paid?"', /How much was paid\?/.test(ex) && !/How much was it\?/.test(ex), true);
-  check('log expense: "Choose the expense category" and "Who paid this?" as big questions', /Choose the expense category/.test(ex) && /wpop-bigh">Who paid this\?/.test(ex) && /wpop-exp/.test(ex), true);
+  check('log expense: "What was it spent on?" and "Who paid this?" as big questions', /What was it spent on\?/.test(extractFn('buildCategoryPicker')) && !/Choose the expense category/.test(ex) && /wpop-bigh">Who paid this\?/.test(ex) && /wpop-exp/.test(ex), true);
   check('log expense: nobody is picked as payer by default', /id="projExpPaidBy" value=""/.test(ex) && !/i===0\?' active'/.test(ex), true);
   check('log expense: who paid, split and notes always visible', !/wpMore|wpSum|Change<\/b>/.test(ex), true);
   check('log expense: saving without a payer asks for one', /Select who paid/.test(extractFn('confirmProjectExpense')), true);
@@ -5559,7 +5559,7 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('split: the amount follows the x2 / x1/2 multipliers', /proj-mult-select\[data-name=/.test(up.slice(up.indexOf('.proj-each'))), true);
   check('split: unticked people say "not sharing"', /not sharing/.test(up), true);
   check('split: no more "per share" jargon', /per share/.test(up), false);
-  check('split: hint before the amount is typed', /Enter the amount above to see what each person pays/.test(up), true);
+  check('split: no hint before the amount is typed (v177)', /Enter the amount above/.test(up), false);
 })();
 
 /* v157/v158: pasting a join code joins straight away; no Paste button */
@@ -5712,6 +5712,19 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   });
   check('compact edit: amount and currency share one line', /ef-c"><input class="dialog-input" id="editAmt"[\s\S]*?\$\{\w+\}<\/div>/.test(extractFn('showProjectEntryActions')), true);
   check('compact edit: tighter category chips in the sheet', /\.ef \.cat-chip\{padding:4px 9px/.test(src), true);
+})();
+
+/* v177: compact Log Expense / Log Payment; "What was it spent on?"; edit sheet in three groups (Rachel, 13 Oct 2026) */
+(function () {
+  const cp = extractFn('buildCategoryPicker');
+  check('v177: picker asks "What was it spent on?" (income: "What was it for?")', /What was it spent on\?/.test(cp) && /What was it for\?/.test(cp) && !/>Category</.test(cp), true);
+  ['showProjectExpenseInput', 'showProjectPayInput', 'showProjectGroupPaymentInput'].forEach(function (n) {
+    check('v177: ' + n + ' puts Notes beside its label', /ef-row"><p class="lf-h ef-l">Notes</.test(extractFn(n)), true);
+  });
+  check('v177: solo payment puts amount beside currency', /id="projPayAmt" style="flex:1/.test(extractFn('showProjectPayInput')), true);
+  const ed = extractFn('showProjectEntryActions');
+  check('v177: edit sheet has two gaps (who paid, date)', (ed.match(/ef-gap/g) || []).length >= 2, true);
+  check('v177: currency box fits three letters', /#editCcy\{flex:0 0 96px/.test(src), true);
 })();
 
 /* ============================ RESULTS ============================ */
