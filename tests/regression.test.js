@@ -5287,7 +5287,9 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
     check('v175: closed shows nothing inside', /\(_finOpen\?'<div class="fin-body"/.test(fs), true);
     check('v175: the person\'s sections are boxes, closed until tapped', /fin-box/.test(fs) && /_finSecOpen\[[\w$]+\]/.test(fs) && /toggleFinSec\(/.test(fs), true);
     check('v175: no sections = trackers listed straight in', /fin-flat/.test(fs), true);
-    check('v175: the band reaches the screen edges', /\.fin-band\{[^}]*margin:0 -18px/.test(src), true);
+    check('v179: Finished is a quiet one-line row (no dark band, no second line)', /Finished trackers/.test(fs) && !/fin-subt/.test(fs) && !/kept safe/.test(fs) && !/\.fin-band\{[^}]*#3a332c/.test(src), true);
+    check('v180: Finished title is smaller than the old band (17px, was 21px)', /\.fin-title\{font-size:17px/.test(src), true);
+    check('v180: Finished row looks like a tracker card (white, bordered)', /\.fin-band\{[^}]*background:var\(--card\)[^}]*border:1px solid var\(--border\)/.test(src), true);
     check('v175: the finish popup points at the band', /\.fin-band/.test(extractFn('finPopup')), true);
   })();
   // v173 (Rachel, 9 Oct 2026): a new or edited entry lands visibly: figures count, the row slides in.
@@ -5397,7 +5399,7 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
     check('v167: short month, no year', N('Sept bills'), 'October bills');
     check('v167: no month in the name adds one', N('Household', '2026-10-05T10:00:00Z'), 'Household, November 2026');
     const fs = extractFn('finishedSectionHtml');
-    check('v167: Finished keeps the person\'s sections', /fin-sub/.test(fs) && /groups\.filter/.test(fs), true);
+    check('v167: Finished keeps the person\'s sections', /fin-box/.test(fs) && /groups\.filter/.test(fs), true);
     check('v167: home draws Finished, no archived line', /finishedSectionHtml\(/.test(extractFn('renderProjects')) && !/archived ·/.test(extractFn('renderProjects')), true);
     check('v167: every Menu can finish', ['proj', 'detail', 'lend'].every(k => new RegExp('id="' + k + 'FinishBtn"').test(src)), true);
     check('v167: finishing says where it went', /at the bottom of your home screen/.test(extractFn('toggleFinishedCurrent')) && /finishedSection/.test(extractFn('showFinishedToast')), true);
