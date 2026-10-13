@@ -5727,6 +5727,15 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('v177: currency box fits three letters', /#editCcy\{flex:0 0 96px/.test(src), true);
 })();
 
+/* v178: edit sheet payer is chips again, not a dropdown (Rachel, 13 Oct 2026) */
+(function () {
+  const ed = extractFn('showProjectEntryActions');
+  check('v178: payer chips call pickEditPayer', /pickEditPayer\(this\)/.test(ed) && /ef-pay/.test(ed), true);
+  check('v178: no payer dropdown left', /<select[^>]*id="editPaidBy"/.test(ed), false);
+  check('v178: hidden editPaidBy still feeds the save', /type="hidden" id="editPaidBy"/.test(ed) && /editPaidBy/.test(extractFn('doEditProjectEntry')), true);
+  check('v178: tapping a chip sets the payer', /\.value=\w+\.dataset\.who/.test(extractFn('pickEditPayer')), true);
+})();
+
 /* ============================ RESULTS ============================ */
 Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks).concat(_pushChecks).concat(_unshareChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
