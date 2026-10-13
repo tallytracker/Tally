@@ -5289,7 +5289,8 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
     check('v175: no sections = trackers listed straight in', /fin-flat/.test(fs), true);
     check('v179: Finished is a quiet one-line row (no dark band, no second line)', /Finished trackers/.test(fs) && !/fin-subt/.test(fs) && !/kept safe/.test(fs) && !/\.fin-band\{[^}]*#3a332c/.test(src), true);
     check('v180: Finished title is smaller than the old band (17px, was 21px)', /\.fin-title\{font-size:17px/.test(src), true);
-    check('v180: Finished row looks like a tracker card (white, bordered)', /\.fin-band\{[^}]*background:var\(--card\)[^}]*border:1px solid var\(--border\)/.test(src), true);
+    check('v182: Finished row is dark grey with white text (unlike active trackers)', /\.fin-band\{[^}]*background:#4f4b46;color:#fff/.test(src), true);
+    check('v182: the note no longer says "Everything is kept"', /Everything is kept/.test(fs), false);
     check('v175: the finish popup points at the band', /\.fin-band/.test(extractFn('finPopup')), true);
   })();
   // v173 (Rachel, 9 Oct 2026): a new or edited entry lands visibly: figures count, the row slides in.
