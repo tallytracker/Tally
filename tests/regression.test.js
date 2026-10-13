@@ -5698,6 +5698,22 @@ section('v141: + wizard, new welcome, tracker tour, sign-in after linking (30 Se
   check('installs chart: tap a bar to read its week', /asWkTip\(this\)/.test(f) && /New installs per week/.test(f), true);
 })();
 
+/* v176: double tap on a history row = one tap; edit sheets fit one screen (Rachel, 13 Oct 2026) */
+(function () {
+  const g = extractFn('rowTapGuard');
+  check('double tap: a row tap starts the quiet window', /\[data-eid\]\[onclick\]/.test(g), true);
+  check('double tap: the second tap is swallowed, not passed to the sheet', /stopPropagation\(\)/.test(g) && /preventDefault\(\)/.test(g), true);
+  check('double tap: guard listens in capture phase for dblclick too', /['"]dblclick['"]/.test(src) && /addEventListener\(\w+,rowTapGuard,\{capture:!?[0-9a-z]+/.test(src.replace(/\s/g, '')), true);
+  ['showProjectEntryActions', 'showEntryActions', 'showLendingEntryActions'].forEach(function (n) {
+    const f = extractFn(n);
+    check('compact edit: ' + n + ' uses the compact sheet', /class="dialog[^"]* ef"/.test(f), true);
+    check('compact edit: ' + n + ' puts labels beside boxes', (f.match(/ef-row/g) || []).length >= 3, true);
+    check('compact edit: ' + n + ' has Delete beside Cancel', /ef-btns/.test(f) && /dialog-btn-delete/.test(f), true);
+  });
+  check('compact edit: amount and currency share one line', /ef-c"><input class="dialog-input" id="editAmt"[\s\S]*?\$\{\w+\}<\/div>/.test(extractFn('showProjectEntryActions')), true);
+  check('compact edit: tighter category chips in the sheet', /\.ef \.cat-chip\{padding:4px 9px/.test(src), true);
+})();
+
 /* ============================ RESULTS ============================ */
 Promise.all(_deletionChecks.concat(_signOutChecks).concat(_reauthChecks).concat(_pushChecks).concat(_unshareChecks)).then(function () {
   console.log('\n' + (fail ? `❌ ${fail} FAILED, ${pass} passed` : `✅ ALL ${pass} TESTS PASSED`));
